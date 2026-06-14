@@ -1,0 +1,162 @@
+import 'dart:io';
+
+import 'package:package_info_plus/package_info_plus.dart';
+
+import '../config/frontface_chat_config.dart';
+import '../models/frontface_models.dart';
+import 'frontface_api_manager.dart';
+import 'frontface_visitor_store.dart';
+
+class FrontFaceApiService {
+  FrontFaceApiService({
+    required this.config,
+    FrontFaceVisitorStore? store,
+    FrontFaceApiManager? apiManager,
+  })  : _store = store ?? FrontFaceVisitorStore(),
+        _api = apiManager ?? FrontFaceApiManager(config);
+
+  final FrontFaceChatConfig config;
+  final FrontFaceVisitorStore _store;
+  final FrontFaceApiManager _api;
+
+  Future<FrontFaceEmbedConfig> fetchEmbedConfig(String visitorId) async {
+    final data = await _api.get(
+      '/api/embed/config/${config.projectId}',
+      visitorId: visitorId,
+    );
+    return FrontFaceEmbedConfig.fromJson(data);
+  }
+
+  Future<Map<String, dynamic>> sendMessage({
+    required String visitorId,
+    required String message,
+    String? sessionId,
+    List<Map<String, String>>? conversationHistory,
+  }) async {
+    final context = await _buildContext();
+    return _api.post(
+      '/api/chat/message',
+      visitorId: visitorId,
+      body: {
+        'projectId': config.projectId,
+        'message': message,
+        'visitorId': visitorId,
+        'source': 'mobile',
+        if (sessionId != null) 'sessionId': sessionId,
+        if (conversationHistory != null && conversationHistory.isNotEmpty)
+          'conversationHistory': conversationHistory,
+        if (context.isNotEmpty) 'context': context,
+      },
+    );
+  }
+
+  Future<FrontFaceHandoffAvailability> getHandoffAvailability(
+    String visitorId,
+  ) async {
+    final data = await _api.get(
+      '/api/projects/${config.projectId}/handoff-availability',
+      visitorId: visitorId,
+    );
+    return FrontFaceHandoffAvailability.fromJson(data);
+  }
+
+  Future<Map<String, dynamic>> triggerHandoff({
+    required String visitorId,
+    required String conversationId,
+  }) async {
+    return _api.post(
+      '/api/conversations/$conversationId/handoff',
+      visitorId: visitorId,
+      body: {'reason': 'button_click'},
+    );
+  }
+
+  Future<Map<String, dynamic>> getConversationStatus({
+    required String visitorId,
+    required String conversationId,
+  }) async {
+    return _api.get(
+      '/api/widget/conversations/$conversationId/status',
+      visitorId: visitorId,
+    );
+  }
+
+  Future<List<FrontFaceChatMessage>> fetchMessages({
+    required String visitorId,
+    required String conversationId,
+    String? after,
+  }) async {
+    final query = after == null ? '' : '?after=${Uri.encodeComponent(after)}';
+    final data = await _api.get(
+      '/api/widget/conversations/$conversationId/messages/public$query',
+      visitorId: visitorId,
+    );
+    final messages = data['messages'] as List<dynamic>? ?? [];
+    return messages
+        .map((e) => FrontFaceChatMessage.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<bool> getLeadCaptureStatus(String visitorId) async {
+    final data = await _api.get(
+      '/api/chat/lead-capture/status'
+      '?projectId=${config.projectId}&visitorId=${Uri.encodeComponent(visitorId)}',
+      visitorId: visitorId,
+    );
+    return data['hasCompletedForm'] as bool? ?? false;
+  }
+
+  Future<Map<String, dynamic>> submitLeadForm({
+    required String visitorId,
+    required Map<String, dynamic> formData,
+    String? sessionId,
+    String firstMessage = '',
+  }) async {
+    return _api.post(
+      '/api/chat/lead-capture/submit-form',
+      visitorId: visitorId,
+      body: {
+        'projectId': config.projectId,
+        'visitorId': visitorId,
+        'source': 'mobile',
+        'formData': formData,
+        'firstMessage': firstMessage,
+        if (sessionId != null) 'sessionId': sessionId,
+      },
+    );
+  }
+
+  Future<void> identifyCustomer({
+    required String visitorId,
+    required String email,
+    String? name,
+  }) async {
+    await _api.post(
+      '/api/customers/identify',
+      visitorId: visitorId,
+      body: {
+        'visitorId': visitorId,
+        'projectId': config.projectId,
+        'email': email,
+        if (name != null && name.isNotEmpty) 'name': name,
+      },
+      throwOnError: false,
+    );
+  }
+
+  Future<String> getOrCreateVisitorId() => _store.getOrCreateVisitorId();
+
+  Future<Map<String, dynamic>> _buildContext() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      return {
+        'device': 'mobile',
+        'os': Platform.isIOS ? 'iOS' : 'Android',
+        'appVersion': packageInfo.version,
+        'language': Platform.localeName,
+      };
+    } catch (_) {
+      return {'device': 'mobile'};
+    }
+  }
+}
