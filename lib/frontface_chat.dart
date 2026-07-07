@@ -32,8 +32,6 @@ class FrontFaceChat {
   ///     projectId: 'your-project-uuid',
   ///     publishableKey: 'pk_...',
   ///   ),
-  ///   userEmail: currentUser?.email,
-  ///   userName: currentUser?.name,
   /// );
   /// ```
   static Future<void> open(
@@ -41,8 +39,6 @@ class FrontFaceChat {
     required FrontFaceChatConfig config,
     FrontFaceChatTheme theme = const FrontFaceChatTheme(),
     FrontFaceChatStrings strings = const FrontFaceChatStrings(),
-    String? userEmail,
-    String? userName,
   }) {
     return Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -51,11 +47,7 @@ class FrontFaceChat {
             config: config,
             strings: strings,
           ),
-          child: FrontFaceChatScreen(
-            theme: theme,
-            userEmail: userEmail,
-            userName: userName,
-          ),
+          child: FrontFaceChatScreen(theme: theme),
         ),
       ),
     );
@@ -87,8 +79,6 @@ class FrontFaceChat {
     required FrontFaceChatConfig config,
     FrontFaceChatTheme theme = const FrontFaceChatTheme(),
     FrontFaceChatStrings strings = const FrontFaceChatStrings(),
-    String? userEmail,
-    String? userName,
     Color? backgroundColor,
     Color? foregroundColor,
     IconData icon = Icons.chat_bubble_outline,
@@ -101,8 +91,6 @@ class FrontFaceChat {
         config: config,
         theme: theme,
         strings: strings,
-        userEmail: userEmail,
-        userName: userName,
       ),
       child: Icon(icon),
     );

@@ -14,15 +14,11 @@ import 'widgets/frontface_message_bubble.dart';
 /// Prefer [FrontFaceChat.open] for a one-line integration.
 class FrontFaceChatScreen extends StatefulWidget {
   final FrontFaceChatTheme theme;
-  final String? userEmail;
-  final String? userName;
   final VoidCallback? onClose;
 
   const FrontFaceChatScreen({
     super.key,
     this.theme = const FrontFaceChatTheme(),
-    this.userEmail,
-    this.userName,
     this.onClose,
   });
 
@@ -45,10 +41,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
   }
 
   Future<void> _initializeChat() async {
-    await _provider.initialize(
-      userEmail: widget.userEmail,
-      userName: widget.userName,
-    );
+    await _provider.initialize();
     _scrollToBottom();
   }
 

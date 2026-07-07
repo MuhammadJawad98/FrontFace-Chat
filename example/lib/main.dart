@@ -62,9 +62,6 @@ class HomePage extends StatelessWidget {
     return FrontFaceChat.open(
       context,
       config: _config,
-      // Optional: pass logged-in user details for identify
-      // userEmail: 'user@example.com',
-      // userName: 'Jane Doe',
     );
   }
 

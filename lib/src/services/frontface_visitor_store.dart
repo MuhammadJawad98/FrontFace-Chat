@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class FrontFaceVisitorStore {
   static const _visitorIdKey = 'frontface_visitor_id';
   static const _sessionIdPrefix = 'frontface_session_id_';
+  static const _sessionTokenPrefix = 'frontface_session_token_';
   static const _leadCompletedPrefix = 'frontface_lead_completed_';
 
   Future<String> getOrCreateVisitorId() async {
@@ -31,6 +32,21 @@ class FrontFaceVisitorStore {
       return;
     }
     await prefs.setString(key, sessionId);
+  }
+
+  Future<String?> getSessionToken(String projectId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('$_sessionTokenPrefix$projectId');
+  }
+
+  Future<void> saveSessionToken(String projectId, String? sessionToken) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$_sessionTokenPrefix$projectId';
+    if (sessionToken == null || sessionToken.isEmpty) {
+      await prefs.remove(key);
+      return;
+    }
+    await prefs.setString(key, sessionToken);
   }
 
   Future<bool> hasCompletedLeadForm(String projectId) async {

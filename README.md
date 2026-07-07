@@ -7,8 +7,7 @@ Native Flutter SDK for [FrontFace](https://frontface.app) AI chat with optional 
 - AI chat powered by the FrontFace Mobile SDK API
 - Lead capture form (configurable from the FrontFace dashboard)
 - Human agent handoff with live message polling
-- Session restore across app restarts
-- Optional customer identify (email / name)
+- Session restore across app restarts (session id + session token persisted automatically)
 - Customizable theme and localized strings
 - One-line `FrontFaceChat.open()` integration
 
@@ -70,17 +69,6 @@ await FrontFaceChat.open(context, config: config);
 floatingActionButton: FrontFaceChat.fab(context, config: config),
 ```
 
-Pass optional user details if the visitor is logged in (links chat to their email in FrontFace):
-
-```dart
-await FrontFaceChat.open(
-  context,
-  config: config,
-  userEmail: user.email,
-  userName: user.name,
-);
-```
-
 ## Integration patterns
 
 ### 1. One-shot (recommended for most apps)
@@ -106,9 +94,7 @@ MultiProvider(
 Navigator.push(
   context,
   MaterialPageRoute(
-    builder: (_) => const FrontFaceChatScreen(
-      userEmail: 'user@example.com',
-    ),
+    builder: (_) => const FrontFaceChatScreen(),
   ),
 );
 ```
@@ -199,8 +185,8 @@ Your app
 1. **Bootstrap** — Creates or restores a visitor ID, loads embed config from the API.
 2. **Lead form** — Shown when enabled in the dashboard and not yet completed.
 3. **AI chat** — Messages sent via `POST /api/chat/message`.
-4. **Handoff** — User can request a human; provider polls for agent messages every 2 seconds.
-5. **Session** — Conversation ID is persisted so returning users see their history.
+4. **Handoff** — User can request a human (creating a conversation first via `ensure-conversation` if none exists yet); provider polls for agent messages every 2 seconds.
+5. **Session** — Conversation id and its session token are persisted together so returning users see their history and continued requests stay authorized.
 
 ## Example app
 
@@ -234,7 +220,3 @@ See [LICENSE](LICENSE).
 
 - FrontFace docs: [frontface.app](https://frontface.app)
 - Package issues: open an issue in this repository
-# FrontFace-Chat
-# FrontFace-Chat
-# FrontFace-Chat
-# FrontFace-Chat

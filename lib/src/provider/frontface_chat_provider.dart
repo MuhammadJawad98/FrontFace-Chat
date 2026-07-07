@@ -32,6 +32,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
 
   String? _visitorId;
   String? _sessionId;
+  String? _sessionToken;
   FrontFaceEmbedConfig _embedConfig = const FrontFaceEmbedConfig();
   FrontFaceConversationStatus _status = FrontFaceConversationStatus.aiActive;
   FrontFaceHandoffAvailability _handoffAvailability =
@@ -67,8 +68,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
 
   bool get showHandoffButton =>
       _handoffAvailability.showButton &&
-      _status == FrontFaceConversationStatus.aiActive &&
-      _sessionId != null;
+      _status == FrontFaceConversationStatus.aiActive;
 
   String get handoffButtonText => _handoffAvailability.buttonText;
 
@@ -76,7 +76,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
       _status == FrontFaceConversationStatus.waiting ||
       _status == FrontFaceConversationStatus.agentActive;
 
-  Future<void> initialize({String? userEmail, String? userName}) async {
+  Future<void> initialize() async {
     if (_isInitializing) return;
     _isInitializing = true;
     _error = null;
@@ -101,17 +101,10 @@ class FrontFaceChatProvider extends ChangeNotifier {
         }
       }
 
-      if (userEmail != null && userEmail.isNotEmpty) {
-        await _api.identifyCustomer(
-          visitorId: _visitorId!,
-          email: userEmail,
-          name: userName,
-        );
-      }
-
       _messages.clear();
       _lastMessageAt = null;
       _sessionId = await _store.getSessionId(_chatConfig.projectId);
+      _sessionToken = await _store.getSessionToken(_chatConfig.projectId);
 
       if (_sessionId != null) {
         await _hydrateConversation();
@@ -152,14 +145,11 @@ class FrontFaceChatProvider extends ChangeNotifier {
         visitorId: _visitorId!,
         message: trimmed,
         sessionId: _sessionId,
+        sessionToken: _sessionToken,
         conversationHistory: _buildConversationHistory(),
       );
 
-      final newSessionId = response['sessionId']?.toString();
-      if (newSessionId != null && newSessionId.isNotEmpty) {
-        _sessionId = newSessionId;
-        await _store.saveSessionId(_chatConfig.projectId, newSessionId);
-      }
+      await _applySessionFromResponse(response);
 
       final assistantText = response['response']?.toString() ?? '';
       final handoff = response['handoff'] as Map<String, dynamic>?;
@@ -218,11 +208,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
         sessionId: _sessionId,
       );
 
-      final newSessionId = response['sessionId']?.toString();
-      if (newSessionId != null && newSessionId.isNotEmpty) {
-        _sessionId = newSessionId;
-        await _store.saveSessionId(_chatConfig.projectId, newSessionId);
-      }
+      await _applySessionFromResponse(response);
 
       final greeting = response['assembledGreeting']?.toString();
       if (greeting != null && greeting.isNotEmpty) {
@@ -249,16 +235,31 @@ class FrontFaceChatProvider extends ChangeNotifier {
   }
 
   Future<void> requestHuman() async {
-    if (_visitorId == null || _sessionId == null || _isHandoffLoading) return;
+    if (_visitorId == null || _isHandoffLoading) return;
 
     _isHandoffLoading = true;
     _error = null;
     _notify();
 
     try {
+      if (_sessionId == null) {
+        final ensured = await _api.ensureConversation(visitorId: _visitorId!);
+        await _applySessionFromResponse({
+          'sessionId': ensured['conversationId'],
+          'sessionToken': ensured['sessionToken'],
+        });
+      }
+      if (_sessionId == null) {
+        throw FrontFaceApiException(
+          code: 'NO_CONVERSATION',
+          message: _strings.couldNotConnectAgent,
+        );
+      }
+
       final result = await _api.triggerHandoff(
         visitorId: _visitorId!,
         conversationId: _sessionId!,
+        sessionToken: _sessionToken,
       );
       _applyHandoffResult(result);
       _startPolling();
@@ -275,6 +276,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
   Future<void> startNewChat() async {
     _stopPolling();
     _sessionId = null;
+    _sessionToken = null;
     _messages.clear();
     _status = FrontFaceConversationStatus.aiActive;
     _agentName = null;
@@ -282,6 +284,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
     _statusBanner = null;
     _error = null;
     await _store.saveSessionId(_chatConfig.projectId, null);
+    await _store.saveSessionToken(_chatConfig.projectId, null);
 
     if (_shouldShowLeadFormBeforeChat()) {
       _showLeadForm = true;
@@ -304,6 +307,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
     final messages = await _api.fetchMessages(
       visitorId: _visitorId!,
       conversationId: _sessionId!,
+      sessionToken: _sessionToken,
     );
     for (final message in messages) {
       _appendMessage(message);
@@ -312,6 +316,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
     final statusData = await _api.getConversationStatus(
       visitorId: _visitorId!,
       conversationId: _sessionId!,
+      sessionToken: _sessionToken,
     );
     _applyStatus(statusData['status']?.toString());
     _agentName = statusData['assignedAgent']?['name']?.toString();
@@ -348,6 +353,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
       final messages = await _api.fetchMessages(
         visitorId: _visitorId!,
         conversationId: _sessionId!,
+        sessionToken: _sessionToken,
         after: _lastMessageAt,
       );
       for (final message in messages) {
@@ -362,6 +368,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
       final statusData = await _api.getConversationStatus(
         visitorId: _visitorId!,
         conversationId: _sessionId!,
+        sessionToken: _sessionToken,
       );
       _applyStatus(statusData['status']?.toString());
       _agentName = statusData['assignedAgent']?['name']?.toString();
@@ -374,6 +381,20 @@ class FrontFaceChatProvider extends ChangeNotifier {
       }
       _notify();
     } catch (_) {}
+  }
+
+  Future<void> _applySessionFromResponse(Map<String, dynamic> response) async {
+    final newSessionId = response['sessionId']?.toString();
+    if (newSessionId != null && newSessionId.isNotEmpty) {
+      _sessionId = newSessionId;
+      await _store.saveSessionId(_chatConfig.projectId, newSessionId);
+    }
+
+    final newSessionToken = response['sessionToken']?.toString();
+    if (newSessionToken != null && newSessionToken.isNotEmpty) {
+      _sessionToken = newSessionToken;
+      await _store.saveSessionToken(_chatConfig.projectId, newSessionToken);
+    }
   }
 
   bool _shouldShowLeadFormBeforeChat() {

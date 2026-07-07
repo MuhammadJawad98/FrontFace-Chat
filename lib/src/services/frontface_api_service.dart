@@ -31,12 +31,14 @@ class FrontFaceApiService {
     required String visitorId,
     required String message,
     String? sessionId,
+    String? sessionToken,
     List<Map<String, String>>? conversationHistory,
   }) async {
     final context = await _buildContext();
     return _api.post(
       '/api/chat/message',
       visitorId: visitorId,
+      sessionToken: sessionToken,
       body: {
         'projectId': config.projectId,
         'message': message,
@@ -46,6 +48,20 @@ class FrontFaceApiService {
         if (conversationHistory != null && conversationHistory.isNotEmpty)
           'conversationHistory': conversationHistory,
         if (context.isNotEmpty) 'context': context,
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> ensureConversation({
+    required String visitorId,
+  }) async {
+    return _api.post(
+      '/api/chat/ensure-conversation',
+      visitorId: visitorId,
+      body: {
+        'projectId': config.projectId,
+        'visitorId': visitorId,
+        'source': 'mobile',
       },
     );
   }
@@ -63,10 +79,12 @@ class FrontFaceApiService {
   Future<Map<String, dynamic>> triggerHandoff({
     required String visitorId,
     required String conversationId,
+    required String? sessionToken,
   }) async {
     return _api.post(
       '/api/conversations/$conversationId/handoff',
       visitorId: visitorId,
+      sessionToken: sessionToken,
       body: {'reason': 'button_click'},
     );
   }
@@ -74,22 +92,26 @@ class FrontFaceApiService {
   Future<Map<String, dynamic>> getConversationStatus({
     required String visitorId,
     required String conversationId,
+    required String? sessionToken,
   }) async {
     return _api.get(
       '/api/widget/conversations/$conversationId/status',
       visitorId: visitorId,
+      sessionToken: sessionToken,
     );
   }
 
   Future<List<FrontFaceChatMessage>> fetchMessages({
     required String visitorId,
     required String conversationId,
+    required String? sessionToken,
     String? after,
   }) async {
     final query = after == null ? '' : '?after=${Uri.encodeComponent(after)}';
     final data = await _api.get(
       '/api/widget/conversations/$conversationId/messages/public$query',
       visitorId: visitorId,
+      sessionToken: sessionToken,
     );
     final messages = data['messages'] as List<dynamic>? ?? [];
     return messages
@@ -123,24 +145,6 @@ class FrontFaceApiService {
         'firstMessage': firstMessage,
         if (sessionId != null) 'sessionId': sessionId,
       },
-    );
-  }
-
-  Future<void> identifyCustomer({
-    required String visitorId,
-    required String email,
-    String? name,
-  }) async {
-    await _api.post(
-      '/api/customers/identify',
-      visitorId: visitorId,
-      body: {
-        'visitorId': visitorId,
-        'projectId': config.projectId,
-        'email': email,
-        if (name != null && name.isNotEmpty) 'name': name,
-      },
-      throwOnError: false,
     );
   }
 

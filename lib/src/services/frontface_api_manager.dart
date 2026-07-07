@@ -12,10 +12,12 @@ class FrontFaceApiManager {
 
   final FrontFaceChatConfig config;
 
-  Map<String, String> _headers(String visitorId) => {
+  Map<String, String> _headers(String visitorId, {String? sessionToken}) => {
         'Content-Type': 'application/json',
         'X-FrontFace-Key': config.publishableKey,
         'X-Visitor-Id': visitorId,
+        if (sessionToken != null && sessionToken.isNotEmpty)
+          'X-FrontFace-Session': sessionToken,
       };
 
   String _url(String path) => '${config.baseUrl}$path';
@@ -23,9 +25,10 @@ class FrontFaceApiManager {
   Future<Map<String, dynamic>> get(
     String path, {
     required String visitorId,
+    String? sessionToken,
   }) async {
     final url = _url(path);
-    final headers = _headers(visitorId);
+    final headers = _headers(visitorId, sessionToken: sessionToken);
     _logCurl('GET', url, headers);
 
     try {
@@ -50,11 +53,12 @@ class FrontFaceApiManager {
   Future<Map<String, dynamic>> post(
     String path, {
     required String visitorId,
+    String? sessionToken,
     Map<String, dynamic>? body,
     bool throwOnError = true,
   }) async {
     final url = _url(path);
-    final headers = _headers(visitorId);
+    final headers = _headers(visitorId, sessionToken: sessionToken);
     _logCurl('POST', url, headers, body: body);
 
     try {
