@@ -20,7 +20,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
        _store = store ?? FrontFaceVisitorStore();
 
   final FrontFaceChatConfig _chatConfig;
-  final FrontFaceChatStrings _strings;
+  FrontFaceChatStrings _strings;
   final FrontFaceApiService _api;
   final FrontFaceVisitorStore _store;
 
@@ -49,6 +49,16 @@ class FrontFaceChatProvider extends ChangeNotifier {
   String? _statusBanner;
 
   FrontFaceChatStrings get strings => _strings;
+
+  /// Swaps the active [FrontFaceChatStrings] at runtime (e.g. when the host
+  /// app's language changes while the chat is open) and notifies listeners
+  /// so the UI re-renders in the new language immediately.
+  void updateStrings(FrontFaceChatStrings strings) {
+    _strings = strings;
+    _updateStatusBanner();
+    _notify();
+  }
+
   List<FrontFaceChatMessage> get messages => List.unmodifiable(_messages);
   FrontFaceEmbedConfig get config => _embedConfig;
   bool get isInitializing => _isInitializing;

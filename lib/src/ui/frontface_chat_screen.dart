@@ -30,7 +30,6 @@ class FrontFaceChatScreen extends StatefulWidget {
 class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  TextDirection _inputDirection = TextDirection.ltr;
 
   // Cached (not a context.read(...) getter) so dispose() can safely detach
   // the listener even if the ancestor Provider is torn down in the same
@@ -40,22 +39,25 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
       .read<FrontFaceChatProvider>();
   FrontFaceChatStrings get _strings => _provider.strings;
 
+  // Computed (not cached) so it always reflects the latest typed content
+  // and the latest strings.textDirection — including after a runtime
+  // FrontFaceChatProvider.updateStrings() call.
+  TextDirection get _inputDirection => _controller.text.isEmpty
+      ? _strings.textDirection
+      : detectTextDirection(_controller.text);
+
   @override
   void initState() {
     super.initState();
-    _inputDirection = _strings.textDirection;
     WidgetsBinding.instance.addPostFrameCallback((_) => _initializeChat());
     _provider.addListener(_scrollToBottom);
     _controller.addListener(_updateInputDirection);
   }
 
   void _updateInputDirection() {
-    final direction = _controller.text.isEmpty
-        ? _strings.textDirection
-        : detectTextDirection(_controller.text);
-    if (direction != _inputDirection) {
-      setState(() => _inputDirection = direction);
-    }
+    // The TextField's textDirection argument is only re-evaluated when this
+    // State rebuilds, so trigger one on every keystroke.
+    setState(() {});
   }
 
   Future<void> _initializeChat() async {
@@ -101,6 +103,10 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild this whole screen (not just the inner Consumer widgets) on
+    // every provider change, including a runtime FrontFaceChatStrings swap
+    // via updateStrings(), so Directionality and icon mirroring stay live.
+    context.watch<FrontFaceChatProvider>();
     final isRtl = _strings.textDirection == TextDirection.rtl;
     return Directionality(
       textDirection: _strings.textDirection,
@@ -124,7 +130,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    provider.config.title,
+                    _strings.title ?? provider.config.title,
                     style: TextStyle(
                       color: widget.theme.onPrimaryColor,
                       fontWeight: FontWeight.w600,

@@ -1,3 +1,11 @@
+## 1.0.2
+
+* Fix: the app bar title stayed in whatever language the FrontFace dashboard's `config.title` was set to (e.g. "Support"), with no way to translate it client-side. Added `FrontFaceChatStrings.title` — when set, it always overrides the dashboard value, so integrators can provide their own translation regardless of what language the dashboard is configured in.
+* Add: `FrontFaceChatProvider.updateStrings()` swaps the active `FrontFaceChatStrings` at runtime and notifies listeners, so the host app can change the chat's language live (title, placeholder, input direction, and any already-shown status banner all update immediately) without recreating the provider or screen.
+* Audited every UI string in the SDK — confirmed there are no remaining hardcoded literals bypassing `FrontFaceChatStrings`; all text is either developer-overridable or dashboard-driven with a localizable fallback.
+* Verified emoji handling end-to-end (rendering, input, copy, and `detectTextDirection`'s neutral treatment of emoji — including ZWJ sequences — so a leading emoji never shadows the following strong-direction word).
+* Docs: clarified in the README which strings are dashboard-driven-with-client-fallback (`typeMessage`, `talkToHuman`, `loadingChat` — used only when the dashboard value is empty) versus always-client-side-override (`title`).
+
 ## 1.0.1
 
 * Fix: the opening assistant bubble no longer duplicates itself by concatenating `greetingIntro` with `greeting` — only `greeting` is shown, per the integration guide.

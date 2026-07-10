@@ -17,6 +17,10 @@ class FakeApiManager extends FrontFaceApiManager {
 
   final List<RecordedCall> calls = [];
 
+  /// Artificial delay applied to every call, so tests can observe transient
+  /// loading states that would otherwise resolve within a single pump.
+  Duration delay = Duration.zero;
+
   Map<String, dynamic> embedConfigResponse = {
     'enabled': true,
     'config': {
@@ -46,6 +50,7 @@ class FakeApiManager extends FrontFaceApiManager {
     required String visitorId,
     String? sessionToken,
   }) async {
+    if (delay > Duration.zero) await Future.delayed(delay);
     calls.add(RecordedCall(path: path, sessionToken: sessionToken));
     if (path.contains('/api/embed/config/')) return embedConfigResponse;
     if (path.contains('/handoff-availability')) {
@@ -67,6 +72,7 @@ class FakeApiManager extends FrontFaceApiManager {
     Map<String, dynamic>? body,
     bool throwOnError = true,
   }) async {
+    if (delay > Duration.zero) await Future.delayed(delay);
     calls.add(RecordedCall(path: path, sessionToken: sessionToken, body: body));
     if (path.contains('/api/chat/message')) {
       return sendMessageResponder?.call(body) ??

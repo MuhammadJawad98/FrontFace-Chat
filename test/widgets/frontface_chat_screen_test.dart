@@ -80,6 +80,106 @@ void main() {
     });
   });
 
+  group('title override', () {
+    testWidgets('server-provided title is used when strings.title is null', (
+      tester,
+    ) async {
+      final fake = FakeApiManager(testConfig);
+      fake.embedConfigResponse = {
+        'enabled': true,
+        'config': {'greeting': 'Hi!', 'title': 'Support'},
+        'leadCapture': {'enabled': false},
+      };
+      await _pumpScreen(tester, fake);
+
+      expect(find.text('Support'), findsOneWidget);
+    });
+
+    testWidgets(
+      'strings.title always overrides the dashboard title, even a non-empty one',
+      (tester) async {
+        final fake = FakeApiManager(testConfig);
+        fake.embedConfigResponse = {
+          'enabled': true,
+          'config': {'greeting': 'مرحبا!', 'title': 'Support'},
+          'leadCapture': {'enabled': false},
+        };
+        const strings = FrontFaceChatStrings(
+          textDirection: TextDirection.rtl,
+          title: 'الدعم',
+        );
+        await _pumpScreen(tester, fake, strings: strings);
+
+        expect(find.text('الدعم'), findsOneWidget);
+        expect(find.text('Support'), findsNothing);
+      },
+    );
+  });
+
+  group('loading state', () {
+    testWidgets(
+      'shows the English default loadingChat text while initializing',
+      (tester) async {
+        final fake = FakeApiManager(testConfig)
+          ..delay = const Duration(milliseconds: 50);
+        final api = FrontFaceApiService(config: testConfig, apiManager: fake);
+        final provider = FrontFaceChatProvider(
+          config: testConfig,
+          api: api,
+          store: FrontFaceVisitorStore(),
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ChangeNotifierProvider.value(
+              value: provider,
+              child: const FrontFaceChatScreen(),
+            ),
+          ),
+        );
+        // The fake API is deliberately delayed, so initialize() is still
+        // in-flight here and the screen should be showing its loading state.
+        await tester.pump();
+
+        expect(find.text('Loading chat...'), findsOneWidget);
+
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets('shows the Arabic loadingChat override while initializing', (
+      tester,
+    ) async {
+      final fake = FakeApiManager(testConfig)
+        ..delay = const Duration(milliseconds: 50);
+      final api = FrontFaceApiService(config: testConfig, apiManager: fake);
+      const strings = FrontFaceChatStrings(
+        textDirection: TextDirection.rtl,
+        loadingChat: 'جارٍ تحميل المحادثة...',
+      );
+      final provider = FrontFaceChatProvider(
+        config: testConfig,
+        strings: strings,
+        api: api,
+        store: FrontFaceVisitorStore(),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider.value(
+            value: provider,
+            child: const FrontFaceChatScreen(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('جارٍ تحميل المحادثة...'), findsOneWidget);
+
+      await tester.pumpAndSettle();
+    });
+  });
+
   group(
     'input direction switches with content, in an Arabic-configured chat',
     () {
@@ -162,6 +262,43 @@ void main() {
 
       expect(find.text('مرحبا! كيف يمكنني مساعدتك اليوم؟'), findsOneWidget);
       expect(find.textContaining('أهلاً بك!'), findsNothing);
+    });
+  });
+
+  group('live language switching via updateStrings', () {
+    testWidgets(
+      'placeholder and input direction update without rebuilding the screen',
+      (tester) async {
+        final fake = FakeApiManager(testConfig);
+        final provider = await _pumpScreen(tester, fake);
+
+        expect(_inputField(tester).decoration?.hintText, 'Type a message...');
+        expect(_inputField(tester).textDirection, TextDirection.ltr);
+
+        provider.updateStrings(_arabicStrings);
+        await tester.pump();
+
+        expect(_inputField(tester).decoration?.hintText, 'اكتب رسالة...');
+        expect(_inputField(tester).textDirection, TextDirection.rtl);
+      },
+    );
+
+    testWidgets('title override applies immediately once set', (tester) async {
+      final fake = FakeApiManager(testConfig);
+      fake.embedConfigResponse = {
+        'enabled': true,
+        'config': {'greeting': 'Hi!', 'title': 'Support'},
+        'leadCapture': {'enabled': false},
+      };
+      final provider = await _pumpScreen(tester, fake);
+
+      expect(find.text('Support'), findsOneWidget);
+
+      provider.updateStrings(const FrontFaceChatStrings(title: 'الدعم'));
+      await tester.pump();
+
+      expect(find.text('الدعم'), findsOneWidget);
+      expect(find.text('Support'), findsNothing);
     });
   });
 }

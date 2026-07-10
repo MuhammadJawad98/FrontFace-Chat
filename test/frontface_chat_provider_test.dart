@@ -9,6 +9,7 @@ import 'fakes/fake_api_manager.dart';
 const _arabicStrings = FrontFaceChatStrings(
   talkToHuman: 'تحدث مع شخص',
   typeMessage: 'اكتب رسالة...',
+  waitingForAgentWithPosition: 'في انتظار وكيل (الترتيب {position})',
 );
 
 FrontFaceChatProvider _buildProvider(
@@ -183,6 +184,50 @@ void main() {
         expect(messageCalls, hasLength(2));
         expect(messageCalls[0].sessionToken, isNull);
         expect(messageCalls[1].sessionToken, 'tok_1');
+      },
+    );
+  });
+
+  group('updateStrings — runtime language switching', () {
+    test('swaps the active strings and notifies listeners', () async {
+      final fake = FakeApiManager(testConfig);
+      final provider = _buildProvider(fake);
+      await provider.initialize();
+
+      expect(provider.strings.talkToHuman, 'Talk to a human');
+
+      var notified = false;
+      provider.addListener(() => notified = true);
+
+      provider.updateStrings(_arabicStrings);
+
+      expect(provider.strings.talkToHuman, 'تحدث مع شخص');
+      expect(provider.handoffButtonText, 'تحدث مع شخص');
+      expect(notified, isTrue);
+    });
+
+    test(
+      'recomputes an already-shown status banner in the new language',
+      () async {
+        final fake = FakeApiManager(testConfig);
+        fake.handoffAvailabilityResponse = {
+          'available': true,
+          'showButton': true,
+          'buttonText': '',
+        };
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        await provider.requestHuman();
+        expect(provider.statusBanner, 'Waiting for an agent (position 1)');
+
+        provider.updateStrings(_arabicStrings);
+
+        expect(
+          provider.statusBanner,
+          contains('انتظار'),
+          reason: 'status banner should be rebuilt in the new language',
+        );
       },
     );
   });

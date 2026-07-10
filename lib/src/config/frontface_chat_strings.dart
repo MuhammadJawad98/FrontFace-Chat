@@ -30,6 +30,13 @@ class FrontFaceChatStrings {
   final String messageCopied;
   final String loadingChat;
 
+  /// Overrides the chat title shown in the app bar. The title normally
+  /// comes from the FrontFace dashboard (`config.title`) and is whatever
+  /// language the project owner configured there — set this when you need
+  /// a client-side translation instead of (or in addition to) the
+  /// dashboard value. Leave `null` to use the dashboard's title as-is.
+  final String? title;
+
   /// Text direction for the chat UI. Set to [TextDirection.rtl] for
   /// right-to-left locales (e.g. Arabic, Hebrew).
   final TextDirection textDirection;
@@ -63,6 +70,7 @@ class FrontFaceChatStrings {
     this.talkToHuman = 'Talk to a human',
     this.messageCopied = 'Copied to clipboard',
     this.loadingChat = 'Loading chat...',
+    this.title,
     this.textDirection = TextDirection.ltr,
   });
 

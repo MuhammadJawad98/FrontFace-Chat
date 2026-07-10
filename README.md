@@ -128,18 +128,24 @@ await FrontFaceChat.open(
 
 Available theme properties: `primaryColor`, `onPrimaryColor`, `backgroundColor`, `inputBackgroundColor`, bubble colors, `subtitleColor`, `errorColor`, `onlineIndicatorColor`, `agentNameColor`.
 
-### Strings (i18n)
+### Strings (i18n) and RTL
 
-Override any UI string:
+Override any UI string, and set `textDirection` for right-to-left locales:
 
 ```dart
 const arabicStrings = FrontFaceChatStrings(
+  textDirection: TextDirection.rtl,
   online: 'متصل',
   beforeWeChat: 'قبل الدردشة',
   leadFormSubtitle: 'يرجى مشاركة بياناتك لمساعدتك بشكل أفضل.',
   continueToChat: 'متابعة',
   email: 'البريد الإلكتروني',
   emailRequired: 'البريد الإلكتروني مطلوب',
+  typeMessage: 'اكتب رسالة...',
+  talkToHuman: 'تحدث مع شخص',
+  loadingChat: 'جارٍ تحميل المحادثة...',
+  messageCopied: 'تم النسخ',
+  title: 'الدعم', // overrides the dashboard-configured title, see note below
 );
 
 await FrontFaceChat.open(
@@ -148,6 +154,33 @@ await FrontFaceChat.open(
   strings: arabicStrings,
 );
 ```
+
+**What's client-side vs. dashboard-driven:** `greeting`, `placeholder`, and the chat
+`title` normally come from the FrontFace dashboard (`config.title`, etc.) — whatever
+language the project owner configured there. If the dashboard value is empty, the SDK
+falls back to `strings.typeMessage` / `strings.talkToHuman` / `strings.loadingChat`. The
+one exception is `strings.title`: since the dashboard title is almost never empty (it
+usually says something like "Support"), set `strings.title` explicitly to force a
+client-side translation that always wins over the dashboard value.
+
+Message bubbles and the input field also auto-detect their own text direction from
+content, so English typed into an Arabic-configured chat (or vice versa) renders
+correctly regardless of the chat's overall `textDirection`.
+
+#### Changing language at runtime
+
+`strings` is normally fixed for the lifetime of a `FrontFaceChatProvider`, but if your
+app supports switching language while the chat is already open (e.g. a language toggle
+in settings), call `updateStrings()` on the provider you're using with `createProvider()`
+or `context.read<FrontFaceChatProvider>()`:
+
+```dart
+provider.updateStrings(arabicStrings);
+```
+
+This swaps every string immediately — title, placeholder, input direction, and any
+already-shown status banner (e.g. "Waiting for an agent...") all re-render in the new
+language without recreating the provider or screen.
 
 ### Debug logging
 

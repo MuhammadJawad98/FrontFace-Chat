@@ -208,4 +208,41 @@ void main() {
       expect(text.textAlign, TextAlign.center);
     });
   });
+
+  group('emoji', () {
+    testWidgets(
+      'emoji + Arabic customer message renders without error and stays rtl',
+      (tester) async {
+        await _pump(
+          tester,
+          FrontFaceChatMessage.local(
+            content: '😀 مرحبا كيف حالك؟',
+            senderType: FrontFaceSenderType.customer,
+          ),
+          strings: _arabicStrings,
+        );
+
+        expect(tester.takeException(), isNull);
+        final text = tester.widget<Text>(find.textContaining('مرحبا'));
+        expect(text.textDirection, TextDirection.rtl);
+      },
+    );
+
+    testWidgets('emoji + markdown bold in an assistant message renders both', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FrontFaceChatMessage.local(
+          content: '🎉 **Congrats!** Your listing is live.',
+          senderType: FrontFaceSenderType.ai,
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('**'), findsNothing);
+      expect(find.textContaining('Congrats!'), findsOneWidget);
+    });
+  });
 }

@@ -68,6 +68,18 @@ void main() {
       expect(detectTextDirection('😀🎉👍'), TextDirection.ltr);
     });
 
+    test('a leading emoji does not shadow a following Arabic word', () {
+      expect(detectTextDirection('😀 مرحبا'), TextDirection.rtl);
+    });
+
+    test('a leading emoji does not shadow a following English word', () {
+      expect(detectTextDirection('😀 Hello'), TextDirection.ltr);
+    });
+
+    test('ZWJ family emoji sequence is neutral, not mistaken for a letter', () {
+      expect(detectTextDirection('👨‍👩‍👧‍👦'), TextDirection.ltr);
+    });
+
     test('first strong character wins when Latin precedes Arabic', () {
       expect(detectTextDirection('Mazda مازدا'), TextDirection.ltr);
     });
