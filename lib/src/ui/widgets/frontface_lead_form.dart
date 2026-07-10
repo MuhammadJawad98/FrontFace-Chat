@@ -9,7 +9,7 @@ class FrontFaceLeadForm extends StatefulWidget {
   final FrontFaceChatTheme theme;
   final FrontFaceChatStrings strings;
   final Future<void> Function(String email, String? field2, String? field3)
-      onSubmit;
+  onSubmit;
 
   const FrontFaceLeadForm({
     super.key,
@@ -120,8 +120,8 @@ class _FrontFaceLeadFormState extends State<FrontFaceLeadForm> {
                 ),
                 validator: widget.config.field2Required
                     ? (value) => value == null || value.trim().isEmpty
-                        ? widget.strings.requiredField
-                        : null
+                          ? widget.strings.requiredField
+                          : null
                     : null,
               ),
             ],
@@ -135,8 +135,8 @@ class _FrontFaceLeadFormState extends State<FrontFaceLeadForm> {
                 ),
                 validator: widget.config.field3Required
                     ? (value) => value == null || value.trim().isEmpty
-                        ? widget.strings.requiredField
-                        : null
+                          ? widget.strings.requiredField
+                          : null
                     : null,
               ),
             ],

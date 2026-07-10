@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart' show TextDirection;
+
 /// Localizable UI strings for the chat package.
 /// Pass a custom instance to [FrontFaceChatScreen] for i18n.
 class FrontFaceChatStrings {
@@ -23,6 +25,14 @@ class FrontFaceChatStrings {
   final String failedToSubmitForm;
   final String couldNotConnectAgent;
   final String chatUnavailable;
+  final String typeMessage;
+  final String talkToHuman;
+  final String messageCopied;
+  final String loadingChat;
+
+  /// Text direction for the chat UI. Set to [TextDirection.rtl] for
+  /// right-to-left locales (e.g. Arabic, Hebrew).
+  final TextDirection textDirection;
 
   const FrontFaceChatStrings({
     this.online = 'Online',
@@ -39,7 +49,8 @@ class FrontFaceChatStrings {
     this.requiredField = 'Required',
     this.additionalInfo = 'Additional info',
     this.waitingForAgent = 'Waiting for an agent...',
-    this.waitingForAgentWithPosition = 'Waiting for an agent (position {position})',
+    this.waitingForAgentWithPosition =
+        'Waiting for an agent (position {position})',
     this.agentJoined = 'An agent joined the chat',
     this.agentHereToHelp = '{name} is here to help',
     this.conversationEnded = 'Conversation ended',
@@ -48,10 +59,14 @@ class FrontFaceChatStrings {
     this.failedToSubmitForm = 'Failed to submit form.',
     this.couldNotConnectAgent = 'Could not connect you to an agent.',
     this.chatUnavailable = 'Chat is currently unavailable.',
+    this.typeMessage = 'Type a message...',
+    this.talkToHuman = 'Talk to a human',
+    this.messageCopied = 'Copied to clipboard',
+    this.loadingChat = 'Loading chat...',
+    this.textDirection = TextDirection.ltr,
   });
 
-  String agentHelp(String name) =>
-      agentHereToHelp.replaceAll('{name}', name);
+  String agentHelp(String name) => agentHereToHelp.replaceAll('{name}', name);
 
   String waitingPosition(int position) =>
       waitingForAgentWithPosition.replaceAll('{position}', '$position');

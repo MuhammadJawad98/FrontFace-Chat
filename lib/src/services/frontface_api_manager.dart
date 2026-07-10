@@ -13,12 +13,12 @@ class FrontFaceApiManager {
   final FrontFaceChatConfig config;
 
   Map<String, String> _headers(String visitorId, {String? sessionToken}) => {
-        'Content-Type': 'application/json',
-        'X-FrontFace-Key': config.publishableKey,
-        'X-Visitor-Id': visitorId,
-        if (sessionToken != null && sessionToken.isNotEmpty)
-          'X-FrontFace-Session': sessionToken,
-      };
+    'Content-Type': 'application/json',
+    'X-FrontFace-Key': config.publishableKey,
+    'X-Visitor-Id': visitorId,
+    if (sessionToken != null && sessionToken.isNotEmpty)
+      'X-FrontFace-Session': sessionToken,
+  };
 
   String _url(String path) => '${config.baseUrl}$path';
 
@@ -40,7 +40,8 @@ class FrontFaceApiManager {
     } on SocketException {
       throw const FrontFaceApiException(
         code: 'NETWORK_ERROR',
-        message: "You're offline. Check your internet connection and try again.",
+        message:
+            "You're offline. Check your internet connection and try again.",
       );
     } catch (_) {
       throw const FrontFaceApiException(
@@ -75,7 +76,8 @@ class FrontFaceApiManager {
       if (!throwOnError) return {};
       throw const FrontFaceApiException(
         code: 'NETWORK_ERROR',
-        message: "You're offline. Check your internet connection and try again.",
+        message:
+            "You're offline. Check your internet connection and try again.",
       );
     } catch (_) {
       if (!throwOnError) return {};
@@ -121,8 +123,9 @@ class FrontFaceApiManager {
     Map<String, dynamic>? body,
   }) {
     if (!config.debugLogging) return;
-    final headerStrings =
-        headers.entries.map((e) => '-H "${e.key}: ${e.value}"').join(' ');
+    final headerStrings = headers.entries
+        .map((e) => '-H "${e.key}: ${e.value}"')
+        .join(' ');
     final bodyString = body != null
         ? "--data-raw '${jsonEncode(body).replaceAll("'", "'\"'\"'")}'"
         : '';

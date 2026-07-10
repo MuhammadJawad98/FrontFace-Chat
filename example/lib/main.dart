@@ -51,18 +51,12 @@ class HomePage extends StatelessWidget {
           ],
         ),
       ),
-      floatingActionButton: FrontFaceChat.fab(
-        context,
-        config: _config,
-      ),
+      floatingActionButton: FrontFaceChat.fab(context, config: _config),
     );
   }
 
   Future<void> _openChat(BuildContext context) {
-    return FrontFaceChat.open(
-      context,
-      config: _config,
-    );
+    return FrontFaceChat.open(context, config: _config);
   }
 
   Future<void> _openChatWithTheme(BuildContext context) {

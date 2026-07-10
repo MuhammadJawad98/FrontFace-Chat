@@ -12,8 +12,8 @@ class FrontFaceApiService {
     required this.config,
     FrontFaceVisitorStore? store,
     FrontFaceApiManager? apiManager,
-  })  : _store = store ?? FrontFaceVisitorStore(),
-        _api = apiManager ?? FrontFaceApiManager(config);
+  }) : _store = store ?? FrontFaceVisitorStore(),
+       _api = apiManager ?? FrontFaceApiManager(config);
 
   final FrontFaceChatConfig config;
   final FrontFaceVisitorStore _store;

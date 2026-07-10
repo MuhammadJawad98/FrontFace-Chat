@@ -14,10 +14,10 @@ class FrontFaceChatProvider extends ChangeNotifier {
     FrontFaceChatStrings strings = const FrontFaceChatStrings(),
     FrontFaceApiService? api,
     FrontFaceVisitorStore? store,
-  })  : _chatConfig = config,
-        _strings = strings,
-        _api = api ?? FrontFaceApiService(config: config, store: store),
-        _store = store ?? FrontFaceVisitorStore();
+  }) : _chatConfig = config,
+       _strings = strings,
+       _api = api ?? FrontFaceApiService(config: config, store: store),
+       _store = store ?? FrontFaceVisitorStore();
 
   final FrontFaceChatConfig _chatConfig;
   final FrontFaceChatStrings _strings;
@@ -70,7 +70,9 @@ class FrontFaceChatProvider extends ChangeNotifier {
       _handoffAvailability.showButton &&
       _status == FrontFaceConversationStatus.aiActive;
 
-  String get handoffButtonText => _handoffAvailability.buttonText;
+  String get handoffButtonText => _handoffAvailability.buttonText.isNotEmpty
+      ? _handoffAvailability.buttonText
+      : _strings.talkToHuman;
 
   bool get isInHandoff =>
       _status == FrontFaceConversationStatus.waiting ||
@@ -92,8 +94,9 @@ class FrontFaceChatProvider extends ChangeNotifier {
         );
       }
 
-      _leadFormCompleted =
-          await _store.hasCompletedLeadForm(_chatConfig.projectId);
+      _leadFormCompleted = await _store.hasCompletedLeadForm(
+        _chatConfig.projectId,
+      );
       if (!_leadFormCompleted) {
         _leadFormCompleted = await _api.getLeadCaptureStatus(_visitorId!);
         if (_leadFormCompleted) {
@@ -421,14 +424,12 @@ class FrontFaceChatProvider extends ChangeNotifier {
 
   void _appendGreetingIfNeeded() {
     if (_messages.isNotEmpty) return;
-    final intro = _embedConfig.greetingIntro.trim();
     final greeting = _embedConfig.greeting.trim();
-    final text = [intro, greeting].where((e) => e.isNotEmpty).join('\n\n');
-    if (text.isEmpty) return;
+    if (greeting.isEmpty) return;
 
     _appendMessage(
       FrontFaceChatMessage.local(
-        content: text,
+        content: greeting,
         senderType: FrontFaceSenderType.ai,
       ),
     );

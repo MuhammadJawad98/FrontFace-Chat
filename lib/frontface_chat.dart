@@ -43,10 +43,8 @@ class FrontFaceChat {
     return Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (routeContext) => ChangeNotifierProvider(
-          create: (_) => FrontFaceChatProvider(
-            config: config,
-            strings: strings,
-          ),
+          create: (_) =>
+              FrontFaceChatProvider(config: config, strings: strings),
           child: FrontFaceChatScreen(theme: theme),
         ),
       ),
@@ -86,12 +84,8 @@ class FrontFaceChat {
     return FloatingActionButton(
       backgroundColor: backgroundColor ?? theme.primaryColor,
       foregroundColor: foregroundColor ?? theme.onPrimaryColor,
-      onPressed: () => open(
-        context,
-        config: config,
-        theme: theme,
-        strings: strings,
-      ),
+      onPressed: () =>
+          open(context, config: config, theme: theme, strings: strings),
       child: Icon(icon),
     );
   }

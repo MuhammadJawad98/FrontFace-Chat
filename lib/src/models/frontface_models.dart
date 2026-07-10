@@ -29,12 +29,14 @@ class FrontFaceChatMessage {
 
   factory FrontFaceChatMessage.fromJson(Map<String, dynamic> json) {
     return FrontFaceChatMessage(
-      id: json['id']?.toString() ??
+      id:
+          json['id']?.toString() ??
           DateTime.now().millisecondsSinceEpoch.toString(),
       content: json['content']?.toString() ?? '',
       senderType: _parseSenderType(json['senderType']?.toString()),
       senderName: json['senderName']?.toString(),
-      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+      createdAt:
+          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
           DateTime.now(),
     );
   }
@@ -89,7 +91,7 @@ class FrontFaceEmbedConfig {
     this.title = 'Chat with us',
     this.greeting = 'Hi! How can I help you today?',
     this.greetingIntro = '',
-    this.placeholder = 'Type a message...',
+    this.placeholder = '',
     this.primaryColor = '#0a0a0a',
     this.leadCaptureEnabled = false,
     this.leadCaptureMode,
@@ -113,9 +115,10 @@ class FrontFaceEmbedConfig {
     return FrontFaceEmbedConfig(
       enabled: json['enabled'] as bool? ?? true,
       title: config['title']?.toString() ?? 'Chat with us',
-      greeting: config['greeting']?.toString() ?? 'Hi! How can I help you today?',
+      greeting:
+          config['greeting']?.toString() ?? 'Hi! How can I help you today?',
       greetingIntro: config['greetingIntro']?.toString() ?? '',
-      placeholder: config['placeholder']?.toString() ?? 'Type a message...',
+      placeholder: config['placeholder']?.toString() ?? '',
       primaryColor: config['primaryColor']?.toString() ?? '#0a0a0a',
       leadCaptureEnabled: leadCapture['enabled'] as bool? ?? false,
       leadCaptureMode: _parseLeadCaptureMode(
@@ -153,14 +156,14 @@ class FrontFaceHandoffAvailability {
   const FrontFaceHandoffAvailability({
     this.available = false,
     this.showButton = false,
-    this.buttonText = 'Talk to a human',
+    this.buttonText = '',
   });
 
   factory FrontFaceHandoffAvailability.fromJson(Map<String, dynamic> json) {
     return FrontFaceHandoffAvailability(
       available: json['available'] as bool? ?? false,
       showButton: json['showButton'] as bool? ?? false,
-      buttonText: json['buttonText']?.toString() ?? 'Talk to a human',
+      buttonText: json['buttonText']?.toString() ?? '',
     );
   }
 }
