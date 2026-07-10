@@ -29,6 +29,17 @@ Future<void> _pump(
   );
 }
 
+TextSpan? _findSpan(InlineSpan span, String text) {
+  if (span is TextSpan) {
+    if (span.text == text) return span;
+    for (final child in span.children ?? const <InlineSpan>[]) {
+      final found = _findSpan(child, text);
+      if (found != null) return found;
+    }
+  }
+  return null;
+}
+
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -136,6 +147,44 @@ void main() {
         isTrue,
       );
     });
+
+    testWidgets(
+      'links render underlined in the theme link color, like a normal URL',
+      (tester) async {
+        const theme = FrontFaceChatTheme();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: FrontFaceMessageBubble(
+                message: FrontFaceChatMessage.local(
+                  content: 'Visit [our site](https://example.com) for details.',
+                  senderType: FrontFaceSenderType.ai,
+                ),
+                theme: theme,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final richTextFinder = find.byWidgetPredicate(
+          (widget) =>
+              widget is RichText &&
+              widget.text.toPlainText().contains('our site'),
+        );
+        expect(richTextFinder, findsWidgets);
+
+        TextSpan? linkSpan;
+        for (final element in richTextFinder.evaluate()) {
+          linkSpan = _findSpan((element.widget as RichText).text, 'our site');
+          if (linkSpan != null) break;
+        }
+
+        expect(linkSpan, isNotNull);
+        expect(linkSpan!.style?.color, theme.linkColor);
+        expect(linkSpan.style?.decoration, TextDecoration.underline);
+      },
+    );
   });
 
   group('copy to clipboard', () {

@@ -16,6 +16,12 @@ class FrontFaceChatTheme {
   final Color onlineIndicatorColor;
   final Color agentNameColor;
 
+  /// Color for links inside assistant/agent Markdown messages. Defaults to
+  /// a conventional link blue, independent of [primaryColor], since
+  /// [primaryColor] is often black/brand-colored and wouldn't read as a
+  /// tappable link.
+  final Color linkColor;
+
   const FrontFaceChatTheme({
     this.primaryColor = const Color(0xFF000000),
     this.onPrimaryColor = Colors.white,
@@ -30,6 +36,7 @@ class FrontFaceChatTheme {
     this.errorColor = const Color(0xFFF04438),
     this.onlineIndicatorColor = const Color(0xFF17B26A),
     this.agentNameColor = const Color(0xFFF76E26),
+    this.linkColor = const Color(0xFF2563EB),
   });
 
   FrontFaceChatTheme copyWith({
@@ -46,6 +53,7 @@ class FrontFaceChatTheme {
     Color? errorColor,
     Color? onlineIndicatorColor,
     Color? agentNameColor,
+    Color? linkColor,
   }) {
     return FrontFaceChatTheme(
       primaryColor: primaryColor ?? this.primaryColor,
@@ -63,6 +71,7 @@ class FrontFaceChatTheme {
       errorColor: errorColor ?? this.errorColor,
       onlineIndicatorColor: onlineIndicatorColor ?? this.onlineIndicatorColor,
       agentNameColor: agentNameColor ?? this.agentNameColor,
+      linkColor: linkColor ?? this.linkColor,
     );
   }
 }

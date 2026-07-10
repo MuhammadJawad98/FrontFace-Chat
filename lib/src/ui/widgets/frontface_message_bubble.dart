@@ -155,7 +155,11 @@ class FrontFaceMessageBubble extends StatelessWidget {
                             fontSize: 15,
                             color: theme.assistantBubbleTextColor,
                           ),
-                          a: TextStyle(color: theme.primaryColor),
+                          a: TextStyle(
+                            color: theme.linkColor,
+                            decoration: TextDecoration.underline,
+                            decorationColor: theme.linkColor,
+                          ),
                           code: TextStyle(
                             fontSize: 13.5,
                             backgroundColor: theme.backgroundColor,

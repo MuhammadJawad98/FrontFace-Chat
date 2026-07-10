@@ -1,3 +1,7 @@
+## 1.0.3
+
+* Fix: links inside assistant/agent Markdown messages had no visual affordance as links — they rendered in `theme.primaryColor` (often black) with no underline. Added `FrontFaceChatTheme.linkColor` (defaults to a conventional link blue, independent of `primaryColor`) and links now render underlined, like a normal URL.
+
 ## 1.0.2
 
 * Fix: the app bar title stayed in whatever language the FrontFace dashboard's `config.title` was set to (e.g. "Support"), with no way to translate it client-side. Added `FrontFaceChatStrings.title` — when set, it always overrides the dashboard value, so integrators can provide their own translation regardless of what language the dashboard is configured in.
