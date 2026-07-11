@@ -202,37 +202,43 @@ const config = FrontFaceChatConfig(
 | `publishableKey` | Yes | Mobile SDK key (`pk_…`) |
 | `baseUrl` | No | API base URL (default: `https://api.frontface.app`) |
 | `debugLogging` | No | Log API requests to console |
-| `requireLeadCaptureBeforeChat` | No | Force the lead form before the first message and before any session/conversation is created, regardless of the dashboard's `capture_mode`. See [Lead capture timing](#lead-capture-timing) below. |
+| `requireLeadCaptureBeforeChat` | No | Defaults to `true`: show the lead form before any greeting or session. Set `false` to follow the dashboard `capture_mode` instead. See [Lead capture timing](#lead-capture-timing). |
 
 ## Lead capture timing
 
-By default, *when* the lead form (email/phone/etc.) appears is controlled by `capture_mode` on
-the FrontFace dashboard:
+When lead capture is enabled on the FrontFace dashboard, the Mobile SDK by default
+shows the lead form **first** (`requireLeadCaptureBeforeChat: true`):
 
-- `email_after` — the form appears **after** the visitor's first message and the AI's reply.
-- `email_first` / `email_required` — the form appears **before** any message, and the session is
-  only created once the form is submitted.
+1. Lead form
+2. Form submit creates the session
+3. API `assembledGreeting` (or the dashboard greeting) appears
 
-If you want "always ask for contact info before starting a session" regardless of what
-`capture_mode` is set to on the dashboard, set the override on the client:
+No local greeting is shown before the form, and no conversation/session is created
+until the form is submitted.
+
+Dashboard `capture_mode` still matters when you opt out:
 
 ```dart
 const config = FrontFaceChatConfig(
   projectId: '...',
   publishableKey: 'pk_...',
-  requireLeadCaptureBeforeChat: true,
+  requireLeadCaptureBeforeChat: false, // follow dashboard mode
 );
 ```
 
-This only takes effect if lead capture itself is enabled on the dashboard — it changes *when*
-the form shows, not whether it's collected at all.
+- `email_after` — greeting first; form appears **after** the visitor's first message.
+- `email_first` / `email_required` — form before chatting (same as the default).
 
-**Session expiry:** if the backend rejects a stored session (`SESSION_INVALID` /
-`SESSION_CONVERSATION_MISMATCH` — e.g. an old or revoked `sessionToken`), the SDK automatically
-clears the stale session, posts a system message (`FrontFaceChatStrings.sessionExpired`), and —
-if lead capture is enabled — shows the lead form again before the next message, so a fresh
-session always starts with verified contact info. This happens automatically; no action is
-needed from the host app.
+This only takes effect if lead capture itself is enabled on the dashboard — it changes
+*when* the form shows, not whether it's collected at all.
+
+**Session expiry:** `sessionToken` expires after 24h of inactivity (expired and
+tampered tokens both return `403 SESSION_*`). On expiry the SDK **clears the chat**,
+drops the stale session, and shows the **lead form** again (when lead capture is
+enabled). Submitting the form creates a new session and shows the API
+`assembledGreeting` — never a local greeting before the form, and never a
+“session expired” error toast. Use `FrontFaceChat.debugCorruptSessionToken(projectId)`
+(or the example app button) to test without waiting 24h.
 
 ## How it works
 
@@ -254,7 +260,7 @@ Your app
 
 ## Example app
 
-Run the bundled example (update credentials in `example/lib/main.dart` first):
+Run the bundled example, then enter your **Project ID** and **Publishable key** in the two fields on the home screen:
 
 ```bash
 cd example

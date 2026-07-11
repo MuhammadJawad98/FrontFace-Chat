@@ -290,12 +290,40 @@ void main() {
     );
 
     test(
-      'dashboard email_after mode still applies when the override is off',
+      'default config shows lead form before greeting even for email_after',
       () async {
         final fake = FakeApiManager(testConfig)
           ..embedConfigResponse = _leadCaptureEmailAfterConfig;
 
         final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        expect(
+          provider.showLeadForm,
+          isTrue,
+          reason:
+              'requireLeadCaptureBeforeChat defaults to true — form first',
+        );
+        expect(
+          provider.messages,
+          isEmpty,
+          reason: 'no greeting until the lead form is submitted',
+        );
+      },
+    );
+
+    test(
+      'dashboard email_after mode applies when requireLeadCaptureBeforeChat is false',
+      () async {
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig;
+        const afterConfig = FrontFaceChatConfig(
+          projectId: 'test-project',
+          publishableKey: 'pk_test',
+          requireLeadCaptureBeforeChat: false,
+        );
+
+        final provider = _buildProvider(fake, config: afterConfig);
         await provider.initialize();
 
         expect(
@@ -390,43 +418,61 @@ void main() {
 
   group('session expiry', () {
     test(
-      'sendMessage recovers: clears the session and re-shows the lead form',
+      'sendMessage on SESSION_INVALID clears chat and shows the lead form',
       () async {
         final fake = FakeApiManager(testConfig)
           ..embedConfigResponse = _leadCaptureEmailAfterConfig
           ..forcedErrorPathContains = '/api/chat/message'
+          ..forcedErrorRemaining = 1
           ..forcedError = const FrontFaceApiException(
             code: 'SESSION_INVALID',
             message: 'Session invalid',
             statusCode: 403,
           );
 
-        final provider = _buildProvider(fake);
-        await provider.initialize();
+        SharedPreferences.setMockInitialValues({
+          'frontface_session_id_${testConfig.projectId}': 'sess_old',
+          'frontface_session_token_${testConfig.projectId}': 'tok_old',
+          'frontface_lead_completed_${testConfig.projectId}': true,
+        });
 
+        // Allow chat without form so we can hit sendMessage first.
+        const afterConfig = FrontFaceChatConfig(
+          projectId: 'test-project',
+          publishableKey: 'pk_test',
+          requireLeadCaptureBeforeChat: false,
+        );
+
+        final provider = _buildProvider(fake, config: afterConfig);
+        await provider.initialize();
         await provider.sendMessage('hi');
 
+        expect(provider.error, isNull);
         expect(
-          provider.messages.any(
-            (m) => m.content == provider.strings.sessionExpired,
-          ),
-          isTrue,
+          provider.messages,
+          isEmpty,
+          reason: 'chat must be cleared on session expiry',
         );
         expect(
           provider.showLeadForm,
           isTrue,
-          reason: 'lead capture is enabled, so it must be asked again',
+          reason: 'lead form must show before a new session is created',
         );
-        expect(provider.error, isNull);
+        expect(
+          provider.messages.any(
+            (m) => m.content == provider.strings.sessionExpired,
+          ),
+          isFalse,
+        );
       },
     );
 
     test(
-      'sendMessage recovers with the greeting when lead capture is disabled',
+      'sendMessage without lead capture shows greeting after clear, not an error',
       () async {
-        // default embedConfigResponse has leadCapture disabled.
         final fake = FakeApiManager(testConfig)
           ..forcedErrorPathContains = '/api/chat/message'
+          ..forcedErrorRemaining = 1
           ..forcedError = const FrontFaceApiException(
             code: 'SESSION_INVALID',
             message: 'Session invalid',
@@ -435,30 +481,32 @@ void main() {
 
         final provider = _buildProvider(fake);
         await provider.initialize();
-
         await provider.sendMessage('are you still there');
 
+        expect(provider.error, isNull);
         expect(provider.showLeadForm, isFalse);
         expect(
           provider.messages.any(
             (m) => m.content == 'Hi! How can I help you today?',
           ),
           isTrue,
-          reason: 'greeting should be re-shown after recovery',
         );
       },
     );
 
     test(
-      'initialize() recovers when hydrating an already-expired stored session',
+      'initialize() on expired session clears chat and shows the lead form',
       () async {
         SharedPreferences.setMockInitialValues({
           'frontface_session_id_${testConfig.projectId}': 'sess_old',
           'frontface_session_token_${testConfig.projectId}': 'tok_old',
+          'frontface_lead_completed_${testConfig.projectId}': true,
         });
 
         final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
           ..forcedErrorPathContains = '/messages/public'
+          ..forcedErrorRemaining = 1
           ..forcedError = const FrontFaceApiException(
             code: 'SESSION_INVALID',
             message: 'Session invalid',
@@ -468,19 +516,35 @@ void main() {
         final provider = _buildProvider(fake);
         await provider.initialize();
 
+        expect(provider.error, isNull);
+        expect(provider.messages, isEmpty);
+        expect(provider.showLeadForm, isTrue);
         expect(
           provider.messages.any(
             (m) => m.content == provider.strings.sessionExpired,
           ),
-          isTrue,
+          isFalse,
         );
-        expect(
-          provider.messages.any(
-            (m) => m.content == 'Hi! How can I help you today?',
-          ),
-          isTrue,
-        );
-        expect(provider.error, isNull);
+      },
+    );
+
+    test(
+      'startNewChat shows lead form with empty messages when lead capture is on',
+      () async {
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..leadCaptureCompleted = true;
+
+        SharedPreferences.setMockInitialValues({
+          'frontface_lead_completed_${testConfig.projectId}': true,
+        });
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+        await provider.startNewChat();
+
+        expect(provider.showLeadForm, isTrue);
+        expect(provider.messages, isEmpty);
       },
     );
   });

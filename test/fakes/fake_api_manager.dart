@@ -55,11 +55,20 @@ class FakeApiManager extends FrontFaceApiManager {
   String? forcedErrorPathContains;
   FrontFaceApiException? forcedError;
 
+  /// How many more times [forcedError] may be thrown. Defaults to unlimited
+  /// (`null`). Set to `1` so a recovery+retry path can succeed after the
+  /// first stale-session failure.
+  int? forcedErrorRemaining;
+
   void _maybeThrow(String path) {
     final substring = forcedErrorPathContains;
-    if (substring != null && path.contains(substring)) {
-      throw forcedError!;
+    if (substring == null || !path.contains(substring)) return;
+    final remaining = forcedErrorRemaining;
+    if (remaining != null) {
+      if (remaining <= 0) return;
+      forcedErrorRemaining = remaining - 1;
     }
+    throw forcedError!;
   }
 
   @override

@@ -266,52 +266,48 @@ void main() {
   });
 
   group('scroll on reload', () {
-    testWidgets('reload with a long history scrolls close to the last message', (
-      tester,
-    ) async {
-      SharedPreferences.setMockInitialValues({
-        'frontface_session_id_${testConfig.projectId}': 'sess_old',
-        'frontface_session_token_${testConfig.projectId}': 'tok_old',
-      });
-
-      final base = DateTime(2024, 1, 1);
-      final fake = FakeApiManager(testConfig)
-        ..messagesResponse = List.generate(60, (i) {
-          final isCustomer = i.isEven;
-          return {
-            'id': 'msg_$i',
-            'senderType': isCustomer ? 'customer' : 'ai',
-            'content': isCustomer
-                ? 'Question #$i from the visitor.'
-                : 'Answer #$i from the assistant — a longer reply with '
-                      'enough text to vary bubble height across the '
-                      'history so the ListView scroll-extent estimate is '
-                      'meaningfully imprecise before it settles.',
-            'createdAt': base.add(Duration(minutes: i)).toIso8601String(),
-          };
+    testWidgets(
+      'reload with a long history opens at the latest message (reverse list)',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_session_id_${testConfig.projectId}': 'sess_old',
+          'frontface_session_token_${testConfig.projectId}': 'tok_old',
         });
 
-      await _pumpScreen(tester, fake);
-      await tester.pumpAndSettle(const Duration(milliseconds: 50));
+        final base = DateTime(2024, 1, 1);
+        final fake = FakeApiManager(testConfig)
+          ..messagesResponse = List.generate(60, (i) {
+            final isCustomer = i.isEven;
+            return {
+              'id': 'msg_$i',
+              'senderType': isCustomer ? 'customer' : 'ai',
+              'content': isCustomer
+                  ? 'Question #$i from the visitor.'
+                  : 'Answer #$i from the assistant — a longer reply with '
+                        'enough text to vary bubble height across the '
+                        'history.',
+              'createdAt': base.add(Duration(minutes: i)).toIso8601String(),
+            };
+          });
 
-      // Widget-test layout of a long ListView.builder history doesn't
-      // reliably reproduce the exact sub-pixel scroll-extent estimation
-      // this fix targets, so this is a loose sanity check (not stuck
-      // near the top) rather than an exact-pixel assertion — the real
-      // fix (cacheExtent + overshoot-and-clamp animateTo) needs
-      // real-device verification.
-      final controller = tester
-          .widget<ListView>(find.byType(ListView))
-          .controller!;
-      expect(controller.hasClients, isTrue);
-      final position = controller.position;
-      expect(
-        position.pixels,
-        greaterThan(position.maxScrollExtent * 0.8),
-        reason:
-            'should have scrolled close to the bottom, not stayed near the top',
-      );
-    });
+        await _pumpScreen(tester, fake);
+        await tester.pumpAndSettle(const Duration(milliseconds: 50));
+
+        final listView = tester.widget<ListView>(find.byType(ListView));
+        expect(listView.reverse, isTrue);
+        final controller = listView.controller!;
+        expect(controller.hasClients, isTrue);
+        // reverse:true → offset 0 is the newest / visual bottom.
+        expect(
+          controller.position.pixels,
+          lessThan(80),
+          reason: 'should open pinned to the latest messages',
+        );
+        expect(find.text('Answer #59 from the assistant — a longer reply with '
+            'enough text to vary bubble height across the '
+            'history.'), findsOneWidget);
+      },
+    );
   });
 
   group('live language switching via updateStrings', () {

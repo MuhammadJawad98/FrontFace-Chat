@@ -5,6 +5,7 @@ import 'src/config/frontface_chat_config.dart';
 import 'src/config/frontface_chat_strings.dart';
 import 'src/config/frontface_chat_theme.dart';
 import 'src/provider/frontface_chat_provider.dart';
+import 'src/services/frontface_visitor_store.dart';
 import 'src/ui/frontface_chat_screen.dart';
 
 export 'src/config/frontface_chat_config.dart';
@@ -88,5 +89,17 @@ class FrontFaceChat {
           open(context, config: config, theme: theme, strings: strings),
       child: Icon(icon),
     );
+  }
+
+  /// Debug helper for session-recovery testing.
+  ///
+  /// Corrupts the persisted `sessionToken` for [projectId]. The next chat
+  /// API call then returns `403 SESSION_INVALID`, which the SDK recovers
+  /// from silently via `ensure-conversation` (no user-facing error).
+  ///
+  /// Returns `false` if no token is stored yet (open chat and send at
+  /// least one message first, or complete the lead form).
+  static Future<bool> debugCorruptSessionToken(String projectId) {
+    return FrontFaceVisitorStore().corruptSessionToken(projectId);
   }
 }

@@ -15,14 +15,21 @@ class FrontFaceChatConfig {
   /// Enable debug curl logs in the console.
   final bool debugLogging;
 
-  /// Forces the lead-capture form (email/phone/etc.) to show before the
-  /// first message is sent — and before any conversation/session is
-  /// created — regardless of the `capture_mode` configured on the
-  /// FrontFace dashboard. Set this when you want "collect contact info,
-  /// then start the session" on every fresh conversation, independent of
-  /// the dashboard's `email_after` / `email_first` / `email_required`
-  /// setting. Has no effect if lead capture itself is disabled on the
-  /// dashboard (`leadCapture.enabled == false`).
+  /// Shows the lead-capture form (email/phone/etc.) before the first
+  /// message and before any conversation/session is created.
+  ///
+  /// Defaults to `true` so the Mobile SDK treats lead capture as the
+  /// first step of creating a session: no local greeting is shown, and
+  /// the conversation (plus the API `assembledGreeting`) starts only
+  /// after the form is submitted. This applies even when the dashboard
+  /// `capture_mode` is `email_after`.
+  ///
+  /// Set to `false` to follow the dashboard mode instead (`email_after`
+  /// shows greeting first, then the form after the first exchange;
+  /// `email_first` / `email_required` still show the form first).
+  ///
+  /// Has no effect if lead capture itself is disabled on the dashboard
+  /// (`leadCapture.enabled == false`).
   final bool requireLeadCaptureBeforeChat;
 
   const FrontFaceChatConfig({
@@ -30,6 +37,6 @@ class FrontFaceChatConfig {
     required this.publishableKey,
     this.baseUrl = 'https://api.frontface.app',
     this.debugLogging = false,
-    this.requireLeadCaptureBeforeChat = false,
+    this.requireLeadCaptureBeforeChat = true,
   });
 }

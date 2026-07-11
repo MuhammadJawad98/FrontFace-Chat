@@ -40,13 +40,13 @@ void main() {
   });
 
   test(
-    'FrontFaceChatConfig requireLeadCaptureBeforeChat defaults to false',
+    'FrontFaceChatConfig requireLeadCaptureBeforeChat defaults to true',
     () {
       const config = FrontFaceChatConfig(
         projectId: 'test-project-id',
         publishableKey: 'pk_test',
       );
-      expect(config.requireLeadCaptureBeforeChat, isFalse);
+      expect(config.requireLeadCaptureBeforeChat, isTrue);
     },
   );
 

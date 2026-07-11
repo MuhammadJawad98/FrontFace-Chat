@@ -29,6 +29,10 @@ class FrontFaceChatStrings {
   final String talkToHuman;
   final String messageCopied;
   final String loadingChat;
+
+  /// Unused by the SDK. Kept for backwards compatibility with apps that
+  /// still pass a custom value. Session death is recovered silently via
+  /// `ensure-conversation` — the user never sees an expiry message.
   final String sessionExpired;
 
   /// Overrides the chat title shown in the app bar. The title normally

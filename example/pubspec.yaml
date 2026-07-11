@@ -1,6 +1,7 @@
 name: frontface_chat_example
 description: Example app for the frontface_chat package.
 publish_to: 'none'
+version: 1.0.0+1
 
 environment:
   sdk: ^3.8.0

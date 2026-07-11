@@ -127,12 +127,14 @@ class FrontFaceChatProvider extends ChangeNotifier {
       // straight past the form.
       if (_shouldShowLeadFormBeforeChat()) {
         _showLeadForm = true;
+        // Never show a local greeting while the lead form is pending.
+        _messages.clear();
       } else if (_sessionId != null) {
         try {
           await _hydrateConversation();
         } on FrontFaceApiException catch (e) {
-          if (!_isSessionExpired(e)) rethrow;
-          await _handleSessionExpired();
+          if (!_isSessionStale(e)) rethrow;
+          await _recoverStaleSession();
         }
       } else {
         _appendGreetingIfNeeded();
@@ -164,38 +166,12 @@ class FrontFaceChatProvider extends ChangeNotifier {
     _notify();
 
     try {
-      final response = await _api.sendMessage(
-        visitorId: _visitorId!,
-        message: trimmed,
-        sessionId: _sessionId,
-        sessionToken: _sessionToken,
-        conversationHistory: _buildConversationHistory(),
-      );
-
-      await _applySessionFromResponse(response);
-
-      final assistantText = response['response']?.toString() ?? '';
-      final handoff = response['handoff'] as Map<String, dynamic>?;
-
-      if (assistantText.isNotEmpty) {
-        _appendMessage(
-          FrontFaceChatMessage.local(
-            content: assistantText,
-            senderType: FrontFaceSenderType.ai,
-          ),
-        );
-      }
-
-      if (_shouldEnterHandoff(assistantText, handoff)) {
-        _applyHandoffFromResponse(handoff);
-        _startPolling();
-      } else {
-        _handoffAvailability = await _api.getHandoffAvailability(_visitorId!);
-        _evaluateLeadFormAfterSend();
-      }
+      await _deliverMessage(trimmed);
     } on FrontFaceApiException catch (e) {
-      if (_isSessionExpired(e)) {
-        await _handleSessionExpired();
+      if (_isSessionStale(e)) {
+        // Clear chat and return to the lead form — session + greeting
+        // are created only after the form is submitted again.
+        await _recoverStaleSession();
       } else {
         _error = e.message;
       }
@@ -204,6 +180,40 @@ class FrontFaceChatProvider extends ChangeNotifier {
     } finally {
       _isSending = false;
       _notify();
+    }
+  }
+
+  /// Posts [trimmed] and applies the assistant reply / handoff side-effects.
+  /// Does not append the customer bubble — callers own that.
+  Future<void> _deliverMessage(String trimmed) async {
+    final response = await _api.sendMessage(
+      visitorId: _visitorId!,
+      message: trimmed,
+      sessionId: _sessionId,
+      sessionToken: _sessionToken,
+      conversationHistory: _buildConversationHistory(),
+    );
+
+    await _applySessionFromResponse(response);
+
+    final assistantText = response['response']?.toString() ?? '';
+    final handoff = response['handoff'] as Map<String, dynamic>?;
+
+    if (assistantText.isNotEmpty) {
+      _appendMessage(
+        FrontFaceChatMessage.local(
+          content: assistantText,
+          senderType: FrontFaceSenderType.ai,
+        ),
+      );
+    }
+
+    if (_shouldEnterHandoff(assistantText, handoff)) {
+      _applyHandoffFromResponse(handoff);
+      _startPolling();
+    } else {
+      _handoffAvailability = await _api.getHandoffAvailability(_visitorId!);
+      _evaluateLeadFormAfterSend();
     }
   }
 
@@ -271,10 +281,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
     try {
       if (_sessionId == null) {
         final ensured = await _api.ensureConversation(visitorId: _visitorId!);
-        await _applySessionFromResponse({
-          'sessionId': ensured['conversationId'],
-          'sessionToken': ensured['sessionToken'],
-        });
+        await _applySessionFromResponse(ensured);
       }
       if (_sessionId == null) {
         throw FrontFaceApiException(
@@ -283,16 +290,10 @@ class FrontFaceChatProvider extends ChangeNotifier {
         );
       }
 
-      final result = await _api.triggerHandoff(
-        visitorId: _visitorId!,
-        conversationId: _sessionId!,
-        sessionToken: _sessionToken,
-      );
-      _applyHandoffResult(result);
-      _startPolling();
+      await _triggerHandoff();
     } on FrontFaceApiException catch (e) {
-      if (_isSessionExpired(e)) {
-        await _handleSessionExpired();
+      if (_isSessionStale(e)) {
+        await _recoverStaleSession();
       } else {
         _error = e.message;
       }
@@ -304,11 +305,22 @@ class FrontFaceChatProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _triggerHandoff() async {
+    final result = await _api.triggerHandoff(
+      visitorId: _visitorId!,
+      conversationId: _sessionId!,
+      sessionToken: _sessionToken,
+    );
+    _applyHandoffResult(result);
+    _startPolling();
+  }
+
   Future<void> startNewChat() async {
     _stopPolling();
     _sessionId = null;
     _sessionToken = null;
     _messages.clear();
+    _lastMessageAt = null;
     _status = FrontFaceConversationStatus.aiActive;
     _agentName = null;
     _queuePosition = null;
@@ -317,9 +329,14 @@ class FrontFaceChatProvider extends ChangeNotifier {
     await _store.saveSessionId(_chatConfig.projectId, null);
     await _store.saveSessionToken(_chatConfig.projectId, null);
 
-    if (_shouldShowLeadFormBeforeChat()) {
+    // A new session always starts with lead capture when enabled —
+    // no local greeting until submit-form returns assembledGreeting.
+    if (_embedConfig.leadCaptureEnabled) {
+      _leadFormCompleted = false;
+      await _store.setLeadFormCompleted(_chatConfig.projectId, false);
       _showLeadForm = true;
     } else {
+      _showLeadForm = false;
       _appendGreetingIfNeeded();
     }
     _notify();
@@ -392,8 +409,8 @@ class FrontFaceChatProvider extends ChangeNotifier {
         _appendMessage(message);
       }
     } on FrontFaceApiException catch (e) {
-      if (_isSessionExpired(e)) {
-        await _handleSessionExpired();
+      if (_isSessionStale(e)) {
+        await _recoverStaleSession();
         _notify();
       }
     } catch (_) {}
@@ -417,44 +434,45 @@ class FrontFaceChatProvider extends ChangeNotifier {
       }
       _notify();
     } on FrontFaceApiException catch (e) {
-      if (_isSessionExpired(e)) {
-        await _handleSessionExpired();
+      if (_isSessionStale(e)) {
+        await _recoverStaleSession();
         _notify();
       }
     } catch (_) {}
   }
 
-  static const _sessionExpiredCodes = {
+  /// Codes that mean the stored `sessionToken` is no longer valid.
+  /// Expired and tampered tokens both land here — there is no renew API.
+  static const _sessionStaleCodes = {
     'SESSION_INVALID',
+    'SESSION_PROJECT_MISMATCH',
+    'SESSION_VISITOR_MISMATCH',
     'SESSION_CONVERSATION_MISMATCH',
   };
 
-  bool _isSessionExpired(Object error) =>
+  bool _isSessionStale(Object error) =>
       error is FrontFaceApiException &&
-      _sessionExpiredCodes.contains(error.code);
+      _sessionStaleCodes.contains(error.code);
 
-  /// Clears the stale session and, if lead capture is enabled, requires it
-  /// again before the next message — mirrors "start a new chat" but is
-  /// triggered automatically when the backend rejects the stored session
-  /// (expired/invalidated `sessionToken`) instead of by a user tap.
-  Future<void> _handleSessionExpired() async {
+  /// Handles a 403 SESSION_* by starting a fresh session flow:
+  /// clear the chat, drop the stale token, and (when lead capture is
+  /// enabled) show the lead form again. The session and chatbot greeting
+  /// are created only when the form is submitted (`assembledGreeting`).
+  ///
+  /// No user-facing "session expired" error is shown.
+  Future<void> _recoverStaleSession() async {
     _stopPolling();
     _sessionId = null;
     _sessionToken = null;
     _messages.clear();
+    _lastMessageAt = null;
     _status = FrontFaceConversationStatus.aiActive;
     _agentName = null;
     _queuePosition = null;
     _statusBanner = null;
+    _error = null;
     await _store.saveSessionId(_chatConfig.projectId, null);
     await _store.saveSessionToken(_chatConfig.projectId, null);
-
-    _appendMessage(
-      FrontFaceChatMessage.local(
-        content: _strings.sessionExpired,
-        senderType: FrontFaceSenderType.system,
-      ),
-    );
 
     if (_embedConfig.leadCaptureEnabled) {
       _leadFormCompleted = false;
@@ -464,11 +482,12 @@ class FrontFaceChatProvider extends ChangeNotifier {
       _showLeadForm = false;
       _appendGreetingIfNeeded();
     }
-    _error = null;
   }
 
   Future<void> _applySessionFromResponse(Map<String, dynamic> response) async {
-    final newSessionId = response['sessionId']?.toString();
+    final newSessionId =
+        response['sessionId']?.toString() ??
+        response['conversationId']?.toString();
     if (newSessionId != null && newSessionId.isNotEmpty) {
       _sessionId = newSessionId;
       await _store.saveSessionId(_chatConfig.projectId, newSessionId);
@@ -482,8 +501,18 @@ class FrontFaceChatProvider extends ChangeNotifier {
   }
 
   bool _shouldShowLeadFormBeforeChat() {
-    if (!_embedConfig.leadCaptureEnabled || _leadFormCompleted) return false;
-    if (_chatConfig.requireLeadCaptureBeforeChat) return true;
+    if (!_embedConfig.leadCaptureEnabled) return false;
+
+    // Default Mobile UX: lead form is the first step of creating a session.
+    // Skip only when resuming an existing session that already completed
+    // lead capture — otherwise (new chat, no session, or incomplete lead)
+    // show the form and never a local greeting first.
+    if (_chatConfig.requireLeadCaptureBeforeChat) {
+      if (_sessionId != null && _leadFormCompleted) return false;
+      return true;
+    }
+
+    if (_leadFormCompleted) return false;
     final mode = _embedConfig.leadCaptureMode;
     return mode == FrontFaceLeadCaptureMode.emailFirst ||
         mode == FrontFaceLeadCaptureMode.emailRequired;
@@ -500,8 +529,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
 
   void _appendGreetingIfNeeded() {
     // Guard on an existing AI message (not "any message") so a leading
-    // system note — e.g. the session-expired notice — doesn't suppress
-    // the greeting that should follow it.
+    // system note doesn't suppress the greeting that should follow it.
     if (_messages.any((m) => m.senderType == FrontFaceSenderType.ai)) return;
     final greeting = _embedConfig.greeting.trim();
     if (greeting.isEmpty) return;

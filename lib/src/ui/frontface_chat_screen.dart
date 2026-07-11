@@ -39,6 +39,9 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
       .read<FrontFaceChatProvider>();
   FrontFaceChatStrings get _strings => _provider.strings;
 
+  int _lastMessageCount = 0;
+  bool _lastSending = false;
+
   // Computed (not cached) so it always reflects the latest typed content
   // and the latest strings.textDirection — including after a runtime
   // FrontFaceChatProvider.updateStrings() call.
@@ -50,7 +53,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _initializeChat());
-    _provider.addListener(_scrollToBottom);
+    _provider.addListener(_onProviderUpdate);
     _controller.addListener(_updateInputDirection);
   }
 
@@ -61,16 +64,12 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
   }
 
   Future<void> _initializeChat() async {
-    // No explicit _scrollToBottom() here — the provider listener already
-    // fires on every notifyListeners() call inside initialize(), including
-    // its final one once messages are hydrated. A second call here would
-    // just race the listener-triggered one.
     await _provider.initialize();
   }
 
   @override
   void dispose() {
-    _provider.removeListener(_scrollToBottom);
+    _provider.removeListener(_onProviderUpdate);
     _controller.removeListener(_updateInputDirection);
     _controller.dispose();
     _scrollController.dispose();
@@ -81,23 +80,37 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
     final text = _controller.text;
     if (text.trim().isEmpty) return;
     _controller.clear();
-    // The provider listener handles scrolling for every notifyListeners()
-    // this triggers (both the optimistic echo and the assistant reply).
+    // Sending always pins to the latest message (WhatsApp-style).
+    _scrollToLatest(force: true);
     await _provider.sendMessage(text);
   }
 
-  void _scrollToBottom() {
+  void _onProviderUpdate() {
+    final count = _provider.messages.length;
+    final sending = _provider.isSending;
+    final changed = count != _lastMessageCount || sending != _lastSending;
+    _lastMessageCount = count;
+    _lastSending = sending;
+    // Only nudge when content actually changed — every notifyListeners()
+    // used to fire a huge animateTo and felt like jumpy overscrolling.
+    if (changed) _scrollToLatest();
+  }
+
+  /// Reverse ListView: offset 0 is the visual bottom (newest messages).
+  /// Matches WhatsApp — stay put if the user scrolled up to read history.
+  void _scrollToLatest({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      // maxScrollExtent can be an underestimate right after a bulk reload
-      // (many messages laid out at once) — deliberately overshoot it, so
-      // the default clamping scroll physics settle exactly at the true
-      // bottom once the remaining items are measured, instead of stopping
-      // short of the last message.
+      if (!mounted || !_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      const nearBottomThreshold = 80.0;
+      final nearBottom = position.pixels <= nearBottomThreshold;
+      if (!force && !nearBottom) return;
+      if (position.pixels <= 0.5) return;
+
       _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent + 100000,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
+        0,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
       );
     });
   }
@@ -251,26 +264,32 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                         )
                       : ListView.builder(
                           controller: _scrollController,
-                          // Lays out more off-screen messages up front so
-                          // maxScrollExtent is measured, not estimated, by
-                          // the time a fresh reload scrolls to the bottom.
-                          cacheExtent: 3000,
+                          // Newest at the visual bottom (offset 0) — same
+                          // pattern as WhatsApp. Avoids jumpy animateTo on
+                          // every message; the list naturally grows downward.
+                          reverse: true,
+                          physics: const ClampingScrollPhysics(),
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                           itemCount:
                               provider.messages.length +
                               (provider.isSending ? 1 : 0),
                           itemBuilder: (context, index) {
-                            if (provider.isSending &&
-                                index == provider.messages.length) {
+                            // index 0 is the bottom of the chat.
+                            if (provider.isSending && index == 0) {
                               return Padding(
-                                padding: const EdgeInsets.only(top: 8),
+                                padding: const EdgeInsets.only(bottom: 8),
                                 child: FrontFaceTypingIndicator(
                                   theme: widget.theme,
                                 ),
                               );
                             }
+                            final messageIndex = provider.isSending
+                                ? index - 1
+                                : index;
+                            final message = provider.messages[
+                                provider.messages.length - 1 - messageIndex];
                             return FrontFaceMessageBubble(
-                              message: provider.messages[index],
+                              message: message,
                               theme: widget.theme,
                               strings: _strings,
                             );
@@ -287,7 +306,6 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                             ? null
                             : () async {
                                 await provider.requestHuman();
-                                _scrollToBottom();
                               },
                         icon: provider.isHandoffLoading
                             ? SizedBox(

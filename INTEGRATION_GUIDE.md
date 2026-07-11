@@ -118,6 +118,22 @@ your traffic in the dashboard's analytics and inbox.
 > Reuse a stored session only while it is still AI-owned (`status == "ai_active"`) or in handoff.
 > A `resolved`/`closed` conversation should not accept new visitor messages — start a new chat.
 
+### Session death & recovery
+
+`sessionToken` is a **stateless HMAC** with a hard **24h TTL** that slides from the last successful
+message response. There is **no renew endpoint**.
+
+When the gate rejects a token you get `403` with `{ "error": { "code": "SESSION_INVALID" } }`
+(also `SESSION_PROJECT_MISMATCH` / `SESSION_VISITOR_MISMATCH` / `SESSION_CONVERSATION_MISMATCH`).
+
+**Mobile SDK recovery (form-first):** do not show an error toast. Clear the chat and stored
+session, then if lead capture is enabled show the lead form again. Submitting the form creates
+the new session and returns `assembledGreeting` — that is the only greeting shown. If lead
+capture is disabled, clear chat and show the config greeting.
+
+**Testing without waiting 24h:** corrupt one character of the stored token. Expired and tampered
+tokens hit the identical verifier path.
+
 ---
 
 ## 4. Bootstrap — fetch runtime config

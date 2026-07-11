@@ -1,3 +1,10 @@
+## 1.0.7
+
+* Fix: when lead capture is enabled, the SDK no longer shows the local greeting before the lead form (even if the dashboard `capture_mode` is `email_after`). `requireLeadCaptureBeforeChat` now defaults to `true`, so the lead form is the first step of creating a session — the conversation and `assembledGreeting` start only after form submit. Set `requireLeadCaptureBeforeChat: false` to follow the dashboard mode instead.
+* Fix: on session expiry (`403 SESSION_*`) clear the chat and show the lead form again (email/phone). The new session and chatbot `assembledGreeting` are created only after form submit — no local greeting before the form, and no “session expired” error. New chat / no session follows the same lead-form-first flow when lead capture is enabled.
+* Add: `FrontFaceChat.debugCorruptSessionToken(projectId)` plus an example-app button to test session-expiry recovery without waiting 24h (tampered == expired on the server).
+* Fix: chat scrolling jumped too far on every message (animateTo overshoot). Switched to a WhatsApp-style reverse `ListView` so the latest message stays at the bottom smoothly, only soft-scrolls when near the bottom, and leaves position alone if the user scrolled up to read history.
+
 ## 1.0.6
 
 * Fix: a lead-capture-required session (`requireLeadCaptureBeforeChat` or dashboard `email_first`/`email_required`) could be bypassed if a session id was already stored from before lead capture was required — `initialize()` checked for an existing session before checking whether lead capture was still needed, so it would hydrate straight past the form. `_shouldShowLeadFormBeforeChat()` is now checked first, unconditionally, so it wins over an existing session too. Removed the now-redundant `_evaluateLeadFormAfterHistory()`.

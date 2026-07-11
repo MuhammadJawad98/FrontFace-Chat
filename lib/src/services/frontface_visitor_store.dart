@@ -58,4 +58,21 @@ class FrontFaceVisitorStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('$_leadCompletedPrefix$projectId', value);
   }
+
+  /// Debug helper: mangles the persisted `sessionToken` so the next API call
+  /// that requires `X-FrontFace-Session` returns `403 SESSION_INVALID`.
+  /// Expired and tampered tokens hit the same server path — this is how to
+  /// exercise silent session recovery without waiting 24h.
+  ///
+  /// Returns `false` if there is no stored token to corrupt.
+  Future<bool> corruptSessionToken(String projectId) async {
+    final token = await getSessionToken(projectId);
+    if (token == null || token.isEmpty) return false;
+
+    final last = token[token.length - 1];
+    final corrupted =
+        '${token.substring(0, token.length - 1)}${last == 'a' ? 'b' : 'a'}';
+    await saveSessionToken(projectId, corrupted);
+    return true;
+  }
 }
