@@ -78,6 +78,26 @@ class _FrontFaceLeadFormState extends State<FrontFaceLeadForm> {
     if (mounted) setState(() => _isSubmitting = false);
   }
 
+  String get _field2DisplayLabel =>
+      widget.strings.field2Label ??
+      widget.config.field2Label ??
+      widget.strings.additionalInfo;
+
+  String get _field3DisplayLabel =>
+      widget.strings.field3Label ??
+      widget.config.field3Label ??
+      widget.strings.additionalInfo;
+
+  TextInputType _keyboardForLabel(String label) {
+    final lower = label.toLowerCase();
+    final isPhone = lower.contains('phone') ||
+        lower.contains('mobile') ||
+        label.contains('هاتف') ||
+        label.contains('جوال') ||
+        label.contains('موبايل');
+    return isPhone ? TextInputType.phone : TextInputType.text;
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -114,10 +134,9 @@ class _FrontFaceLeadFormState extends State<FrontFaceLeadForm> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _field2Controller,
+                keyboardType: _keyboardForLabel(_field2DisplayLabel),
                 cursorColor: widget.theme.primaryColor,
-                decoration: _fieldDecoration(
-                  widget.config.field2Label ?? widget.strings.additionalInfo,
-                ),
+                decoration: _fieldDecoration(_field2DisplayLabel),
                 validator: widget.config.field2Required
                     ? (value) => value == null || value.trim().isEmpty
                           ? widget.strings.requiredField
@@ -129,10 +148,9 @@ class _FrontFaceLeadFormState extends State<FrontFaceLeadForm> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _field3Controller,
+                keyboardType: _keyboardForLabel(_field3DisplayLabel),
                 cursorColor: widget.theme.primaryColor,
-                decoration: _fieldDecoration(
-                  widget.config.field3Label ?? widget.strings.additionalInfo,
-                ),
+                decoration: _fieldDecoration(_field3DisplayLabel),
                 validator: widget.config.field3Required
                     ? (value) => value == null || value.trim().isEmpty
                           ? widget.strings.requiredField

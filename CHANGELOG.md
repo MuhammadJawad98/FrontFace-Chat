@@ -1,3 +1,9 @@
+## 1.0.9
+
+* Fix: lead-form field 2/3 labels (e.g. dashboard "Phone Number") can be overridden via `FrontFaceChatStrings.field2Label` / `field3Label` for English or Arabic, with automatic phone-number keyboard type when the label reads as a phone field.
+* Fix: app bar back icon was double-flipped in RTL (manually swapped to `arrow_forward_ios` on top of `Directionality`'s own mirroring, pointing the wrong way). Now a single `arrow_back_ios_new` that mirrors correctly.
+* Example app: added a language switcher (English/Arabic) on the home screen and live in-chat via `FrontFaceChatProvider.updateStrings()`, demonstrating phone-label override, RTL back button, and layout direction.
+
 ## 1.0.8
 
 * Fix: Markdown links like `[View Details](https://…)` in assistant replies now open in the external browser reliably (no longer blocked by `canLaunchUrl` failing on iOS/Android). Example app Info.plist / AndroidManifest updated with the required URL query declarations.

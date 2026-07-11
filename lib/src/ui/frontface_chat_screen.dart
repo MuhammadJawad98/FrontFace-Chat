@@ -141,8 +141,11 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
           foregroundColor: widget.theme.onPrimaryColor,
           leading: IconButton(
             onPressed: _close,
+            // Always use back; Directionality (RTL/LTR) mirrors it.
+            // Manually swapping to arrow_forward_ios in RTL double-flipped
+            // the icon and looked wrong in Arabic.
             icon: Icon(
-              isRtl ? Icons.arrow_forward_ios : Icons.arrow_back_ios,
+              Icons.arrow_back_ios_new,
               color: widget.theme.onPrimaryColor,
             ),
           ),

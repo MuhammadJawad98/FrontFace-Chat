@@ -141,10 +141,13 @@ const arabicStrings = FrontFaceChatStrings(
   continueToChat: 'متابعة',
   email: 'البريد الإلكتروني',
   emailRequired: 'البريد الإلكتروني مطلوب',
+  field2Label: 'رقم الهاتف', // overrides dashboard "Phone Number"
+  // field3Label: 'الشركة',
   typeMessage: 'اكتب رسالة...',
   talkToHuman: 'تحدث مع شخص',
   loadingChat: 'جارٍ تحميل المحادثة...',
   messageCopied: 'تم النسخ',
+  viewDetails: 'عرض التفاصيل',
   title: 'الدعم', // overrides the dashboard-configured title, see note below
 );
 
@@ -157,7 +160,9 @@ await FrontFaceChat.open(
 
 **What's client-side vs. dashboard-driven:** `greeting`, `placeholder`, and the chat
 `title` normally come from the FrontFace dashboard (`config.title`, etc.) — whatever
-language the project owner configured there. If the dashboard value is empty, the SDK
+language the project owner configured there. Lead-form field 2/3 labels (e.g. "Phone
+Number") also come from the dashboard — override them with `strings.field2Label` /
+`strings.field3Label` for English or Arabic. If the dashboard value is empty, the SDK
 falls back to `strings.typeMessage` / `strings.talkToHuman` / `strings.loadingChat`. The
 one exception is `strings.title`: since the dashboard title is almost never empty (it
 usually says something like "Support"), set `strings.title` explicitly to force a

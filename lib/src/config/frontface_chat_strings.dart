@@ -15,6 +15,16 @@ class FrontFaceChatStrings {
   final String invalidEmail;
   final String requiredField;
   final String additionalInfo;
+
+  /// Overrides the dashboard label for lead-form field 2 (often "Phone Number").
+  /// When `null`, the FrontFace dashboard label is used. Set this for i18n,
+  /// e.g. English `Phone Number` or Arabic `رقم الهاتف`.
+  final String? field2Label;
+
+  /// Overrides the dashboard label for lead-form field 3. When `null`, the
+  /// dashboard label is used.
+  final String? field3Label;
+
   final String waitingForAgent;
   final String waitingForAgentWithPosition;
   final String agentJoined;
@@ -66,6 +76,8 @@ class FrontFaceChatStrings {
     this.invalidEmail = 'Enter a valid email',
     this.requiredField = 'Required',
     this.additionalInfo = 'Additional info',
+    this.field2Label,
+    this.field3Label,
     this.waitingForAgent = 'Waiting for an agent...',
     this.waitingForAgentWithPosition =
         'Waiting for an agent (position {position})',
