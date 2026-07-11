@@ -1,3 +1,8 @@
+## 1.0.5
+
+* Fix: scroll-to-bottom could land short of the last message on reload with a long conversation history, requiring a manual scroll to see it. Removed redundant `_scrollToBottom()` calls that raced the provider-listener-triggered one, gave the message `ListView` a generous `cacheExtent` so more content is measured up front, and switched to an overshoot-and-clamp `animateTo` target so a stale `maxScrollExtent` estimate can't strand the scroll.
+* Docs: added a `requireLeadCaptureBeforeChat` usage reference in the example app.
+
 ## 1.0.4
 
 * Add: `FrontFaceChatConfig.requireLeadCaptureBeforeChat` — forces the lead-capture form (email/phone/etc.) to show before the first message and before any session/conversation is created, regardless of the `capture_mode` configured on the FrontFace dashboard.

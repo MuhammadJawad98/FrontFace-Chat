@@ -265,6 +265,56 @@ void main() {
     });
   });
 
+  group('scroll on reload', () {
+    testWidgets(
+      'reload with a long history scrolls close to the last message',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_session_id_${testConfig.projectId}': 'sess_old',
+          'frontface_session_token_${testConfig.projectId}': 'tok_old',
+        });
+
+        final base = DateTime(2024, 1, 1);
+        final fake = FakeApiManager(testConfig)
+          ..messagesResponse = List.generate(60, (i) {
+            final isCustomer = i.isEven;
+            return {
+              'id': 'msg_$i',
+              'senderType': isCustomer ? 'customer' : 'ai',
+              'content': isCustomer
+                  ? 'Question #$i from the visitor.'
+                  : 'Answer #$i from the assistant — a longer reply with '
+                        'enough text to vary bubble height across the '
+                        'history so the ListView scroll-extent estimate is '
+                        'meaningfully imprecise before it settles.',
+              'createdAt': base.add(Duration(minutes: i)).toIso8601String(),
+            };
+          });
+
+        await _pumpScreen(tester, fake);
+        await tester.pumpAndSettle(const Duration(milliseconds: 50));
+
+        // Widget-test layout of a long ListView.builder history doesn't
+        // reliably reproduce the exact sub-pixel scroll-extent estimation
+        // this fix targets, so this is a loose sanity check (not stuck
+        // near the top) rather than an exact-pixel assertion — the real
+        // fix (cacheExtent + overshoot-and-clamp animateTo) needs
+        // real-device verification.
+        final controller = tester
+            .widget<ListView>(find.byType(ListView))
+            .controller!;
+        expect(controller.hasClients, isTrue);
+        final position = controller.position;
+        expect(
+          position.pixels,
+          greaterThan(position.maxScrollExtent * 0.8),
+          reason:
+              'should have scrolled close to the bottom, not stayed near the top',
+        );
+      },
+    );
+  });
+
   group('live language switching via updateStrings', () {
     testWidgets(
       'placeholder and input direction update without rebuilding the screen',

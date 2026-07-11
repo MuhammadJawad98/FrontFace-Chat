@@ -45,6 +45,10 @@ class FakeApiManager extends FrontFaceApiManager {
 
   bool leadCaptureCompleted = false;
 
+  /// Canned history returned by GET .../messages/public — set this to
+  /// simulate hydrating a conversation with existing messages on reload.
+  List<Map<String, dynamic>> messagesResponse = [];
+
   /// If set, any get/post call whose path contains this substring throws
   /// [forcedError] instead of returning a canned response — used to
   /// simulate a 403 SESSION_INVALID (or any other) error from the server.
@@ -74,7 +78,9 @@ class FakeApiManager extends FrontFaceApiManager {
     if (path.contains('/lead-capture/status')) {
       return {'hasCompletedForm': leadCaptureCompleted};
     }
-    if (path.contains('/messages/public')) return {'messages': []};
+    if (path.contains('/messages/public')) {
+      return {'messages': messagesResponse};
+    }
     if (path.contains('/status')) return {'status': 'ai_active'};
     return {};
   }

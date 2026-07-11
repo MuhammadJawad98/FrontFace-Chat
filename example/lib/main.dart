@@ -10,6 +10,10 @@ const _config = FrontFaceChatConfig(
   projectId: 'YOUR_PROJECT_UUID',
   publishableKey: 'pk_YOUR_PUBLISHABLE_KEY',
   // debugLogging: true,
+  // Ask for contact info (email/phone) before the first message and
+  // before any session is created, regardless of the dashboard's
+  // capture_mode. Also re-asks automatically if a session expires.
+  // requireLeadCaptureBeforeChat: true,
 );
 
 class ExampleApp extends StatelessWidget {

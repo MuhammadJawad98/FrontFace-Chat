@@ -61,8 +61,11 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
   }
 
   Future<void> _initializeChat() async {
+    // No explicit _scrollToBottom() here — the provider listener already
+    // fires on every notifyListeners() call inside initialize(), including
+    // its final one once messages are hydrated. A second call here would
+    // just race the listener-triggered one.
     await _provider.initialize();
-    _scrollToBottom();
   }
 
   @override
@@ -78,15 +81,21 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
     final text = _controller.text;
     if (text.trim().isEmpty) return;
     _controller.clear();
+    // The provider listener handles scrolling for every notifyListeners()
+    // this triggers (both the optimistic echo and the assistant reply).
     await _provider.sendMessage(text);
-    _scrollToBottom();
   }
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
+      // maxScrollExtent can be an underestimate right after a bulk reload
+      // (many messages laid out at once) — deliberately overshoot it, so
+      // the default clamping scroll physics settle exactly at the true
+      // bottom once the remaining items are measured, instead of stopping
+      // short of the last message.
       _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
+        _scrollController.position.maxScrollExtent + 100000,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
@@ -238,11 +247,14 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                               field2: field2,
                               field3: field3,
                             );
-                            _scrollToBottom();
                           },
                         )
                       : ListView.builder(
                           controller: _scrollController,
+                          // Lays out more off-screen messages up front so
+                          // maxScrollExtent is measured, not estimated, by
+                          // the time a fresh reload scrolls to the bottom.
+                          cacheExtent: 3000,
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                           itemCount:
                               provider.messages.length +
