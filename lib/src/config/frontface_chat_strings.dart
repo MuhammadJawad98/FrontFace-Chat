@@ -29,6 +29,7 @@ class FrontFaceChatStrings {
   final String talkToHuman;
   final String messageCopied;
   final String loadingChat;
+  final String sessionExpired;
 
   /// Overrides the chat title shown in the app bar. The title normally
   /// comes from the FrontFace dashboard (`config.title`) and is whatever
@@ -70,6 +71,7 @@ class FrontFaceChatStrings {
     this.talkToHuman = 'Talk to a human',
     this.messageCopied = 'Copied to clipboard',
     this.loadingChat = 'Loading chat...',
+    this.sessionExpired = 'Your session has expired. Please start again.',
     this.title,
     this.textDirection = TextDirection.ltr,
   });

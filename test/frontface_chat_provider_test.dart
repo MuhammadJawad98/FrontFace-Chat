@@ -15,15 +15,29 @@ const _arabicStrings = FrontFaceChatStrings(
 FrontFaceChatProvider _buildProvider(
   FakeApiManager fake, {
   FrontFaceChatStrings strings = const FrontFaceChatStrings(),
+  FrontFaceChatConfig? config,
 }) {
-  final api = FrontFaceApiService(config: testConfig, apiManager: fake);
+  final effectiveConfig = config ?? testConfig;
+  final api = FrontFaceApiService(config: effectiveConfig, apiManager: fake);
   return FrontFaceChatProvider(
-    config: testConfig,
+    config: effectiveConfig,
     strings: strings,
     api: api,
     store: FrontFaceVisitorStore(),
   );
 }
+
+final _leadCaptureEmailAfterConfig = {
+  'enabled': true,
+  'config': {'greeting': 'Hi! How can I help you today?', 'placeholder': ''},
+  'leadCapture': {
+    'enabled': true,
+    'capture_mode': 'email_after',
+    'formFields': {
+      'email': {'required': true},
+    },
+  },
+};
 
 void main() {
   setUp(() {
@@ -228,6 +242,166 @@ void main() {
           contains('انتظار'),
           reason: 'status banner should be rebuilt in the new language',
         );
+      },
+    );
+  });
+
+  group('requireLeadCaptureBeforeChat override', () {
+    test(
+      'forces the lead form before chat even when the dashboard mode is email_after',
+      () async {
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig;
+        const overrideConfig = FrontFaceChatConfig(
+          projectId: 'test-project',
+          publishableKey: 'pk_test',
+          requireLeadCaptureBeforeChat: true,
+        );
+
+        final provider = _buildProvider(fake, config: overrideConfig);
+        await provider.initialize();
+
+        expect(provider.showLeadForm, isTrue);
+        expect(
+          provider.messages,
+          isEmpty,
+          reason: 'no greeting should show until the lead form is submitted',
+        );
+      },
+    );
+
+    test(
+      'has no effect when lead capture itself is disabled on the dashboard',
+      () async {
+        final fake = FakeApiManager(testConfig);
+        // Default embedConfigResponse has leadCapture.enabled == false.
+        const overrideConfig = FrontFaceChatConfig(
+          projectId: 'test-project',
+          publishableKey: 'pk_test',
+          requireLeadCaptureBeforeChat: true,
+        );
+
+        final provider = _buildProvider(fake, config: overrideConfig);
+        await provider.initialize();
+
+        expect(provider.showLeadForm, isFalse);
+        expect(provider.messages, isNotEmpty);
+      },
+    );
+
+    test(
+      'dashboard email_after mode still applies when the override is off',
+      () async {
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig;
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        expect(
+          provider.showLeadForm,
+          isFalse,
+          reason:
+              'email_after shows the form after the first exchange, not before',
+        );
+        expect(provider.messages, isNotEmpty, reason: 'greeting shows first');
+      },
+    );
+  });
+
+  group('session expiry', () {
+    test(
+      'sendMessage recovers: clears the session and re-shows the lead form',
+      () async {
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..forcedErrorPathContains = '/api/chat/message'
+          ..forcedError = const FrontFaceApiException(
+            code: 'SESSION_INVALID',
+            message: 'Session invalid',
+            statusCode: 403,
+          );
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        await provider.sendMessage('hi');
+
+        expect(
+          provider.messages.any(
+            (m) => m.content == provider.strings.sessionExpired,
+          ),
+          isTrue,
+        );
+        expect(
+          provider.showLeadForm,
+          isTrue,
+          reason: 'lead capture is enabled, so it must be asked again',
+        );
+        expect(provider.error, isNull);
+      },
+    );
+
+    test(
+      'sendMessage recovers with the greeting when lead capture is disabled',
+      () async {
+        // default embedConfigResponse has leadCapture disabled.
+        final fake = FakeApiManager(testConfig)
+          ..forcedErrorPathContains = '/api/chat/message'
+          ..forcedError = const FrontFaceApiException(
+            code: 'SESSION_INVALID',
+            message: 'Session invalid',
+            statusCode: 403,
+          );
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        await provider.sendMessage('are you still there');
+
+        expect(provider.showLeadForm, isFalse);
+        expect(
+          provider.messages.any(
+            (m) => m.content == 'Hi! How can I help you today?',
+          ),
+          isTrue,
+          reason: 'greeting should be re-shown after recovery',
+        );
+      },
+    );
+
+    test(
+      'initialize() recovers when hydrating an already-expired stored session',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_session_id_${testConfig.projectId}': 'sess_old',
+          'frontface_session_token_${testConfig.projectId}': 'tok_old',
+        });
+
+        final fake = FakeApiManager(testConfig)
+          ..forcedErrorPathContains = '/messages/public'
+          ..forcedError = const FrontFaceApiException(
+            code: 'SESSION_INVALID',
+            message: 'Session invalid',
+            statusCode: 403,
+          );
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        expect(
+          provider.messages.any(
+            (m) => m.content == provider.strings.sessionExpired,
+          ),
+          isTrue,
+        );
+        expect(
+          provider.messages.any(
+            (m) => m.content == 'Hi! How can I help you today?',
+          ),
+          isTrue,
+        );
+        expect(provider.error, isNull);
       },
     );
   });

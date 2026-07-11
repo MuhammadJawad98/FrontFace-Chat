@@ -202,6 +202,37 @@ const config = FrontFaceChatConfig(
 | `publishableKey` | Yes | Mobile SDK key (`pk_…`) |
 | `baseUrl` | No | API base URL (default: `https://api.frontface.app`) |
 | `debugLogging` | No | Log API requests to console |
+| `requireLeadCaptureBeforeChat` | No | Force the lead form before the first message and before any session/conversation is created, regardless of the dashboard's `capture_mode`. See [Lead capture timing](#lead-capture-timing) below. |
+
+## Lead capture timing
+
+By default, *when* the lead form (email/phone/etc.) appears is controlled by `capture_mode` on
+the FrontFace dashboard:
+
+- `email_after` — the form appears **after** the visitor's first message and the AI's reply.
+- `email_first` / `email_required` — the form appears **before** any message, and the session is
+  only created once the form is submitted.
+
+If you want "always ask for contact info before starting a session" regardless of what
+`capture_mode` is set to on the dashboard, set the override on the client:
+
+```dart
+const config = FrontFaceChatConfig(
+  projectId: '...',
+  publishableKey: 'pk_...',
+  requireLeadCaptureBeforeChat: true,
+);
+```
+
+This only takes effect if lead capture itself is enabled on the dashboard — it changes *when*
+the form shows, not whether it's collected at all.
+
+**Session expiry:** if the backend rejects a stored session (`SESSION_INVALID` /
+`SESSION_CONVERSATION_MISMATCH` — e.g. an old or revoked `sessionToken`), the SDK automatically
+clears the stale session, posts a system message (`FrontFaceChatStrings.sessionExpired`), and —
+if lead capture is enabled — shows the lead form again before the next message, so a fresh
+session always starts with verified contact info. This happens automatically; no action is
+needed from the host app.
 
 ## How it works
 

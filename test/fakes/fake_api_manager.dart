@@ -1,4 +1,5 @@
 import 'package:frontface_chat/src/config/frontface_chat_config.dart';
+import 'package:frontface_chat/src/models/frontface_models.dart';
 import 'package:frontface_chat/src/services/frontface_api_manager.dart';
 
 class RecordedCall {
@@ -44,6 +45,19 @@ class FakeApiManager extends FrontFaceApiManager {
 
   bool leadCaptureCompleted = false;
 
+  /// If set, any get/post call whose path contains this substring throws
+  /// [forcedError] instead of returning a canned response — used to
+  /// simulate a 403 SESSION_INVALID (or any other) error from the server.
+  String? forcedErrorPathContains;
+  FrontFaceApiException? forcedError;
+
+  void _maybeThrow(String path) {
+    final substring = forcedErrorPathContains;
+    if (substring != null && path.contains(substring)) {
+      throw forcedError!;
+    }
+  }
+
   @override
   Future<Map<String, dynamic>> get(
     String path, {
@@ -52,6 +66,7 @@ class FakeApiManager extends FrontFaceApiManager {
   }) async {
     if (delay > Duration.zero) await Future.delayed(delay);
     calls.add(RecordedCall(path: path, sessionToken: sessionToken));
+    _maybeThrow(path);
     if (path.contains('/api/embed/config/')) return embedConfigResponse;
     if (path.contains('/handoff-availability')) {
       return handoffAvailabilityResponse;
@@ -74,6 +89,7 @@ class FakeApiManager extends FrontFaceApiManager {
   }) async {
     if (delay > Duration.zero) await Future.delayed(delay);
     calls.add(RecordedCall(path: path, sessionToken: sessionToken, body: body));
+    _maybeThrow(path);
     if (path.contains('/api/chat/message')) {
       return sendMessageResponder?.call(body) ??
           {'response': 'ok', 'sessionId': 'sess_1', 'sessionToken': 'tok_1'};

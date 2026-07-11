@@ -15,10 +15,21 @@ class FrontFaceChatConfig {
   /// Enable debug curl logs in the console.
   final bool debugLogging;
 
+  /// Forces the lead-capture form (email/phone/etc.) to show before the
+  /// first message is sent — and before any conversation/session is
+  /// created — regardless of the `capture_mode` configured on the
+  /// FrontFace dashboard. Set this when you want "collect contact info,
+  /// then start the session" on every fresh conversation, independent of
+  /// the dashboard's `email_after` / `email_first` / `email_required`
+  /// setting. Has no effect if lead capture itself is disabled on the
+  /// dashboard (`leadCapture.enabled == false`).
+  final bool requireLeadCaptureBeforeChat;
+
   const FrontFaceChatConfig({
     required this.projectId,
     required this.publishableKey,
     this.baseUrl = 'https://api.frontface.app',
     this.debugLogging = false,
+    this.requireLeadCaptureBeforeChat = false,
   });
 }

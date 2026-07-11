@@ -1,3 +1,8 @@
+## 1.0.4
+
+* Add: `FrontFaceChatConfig.requireLeadCaptureBeforeChat` — forces the lead-capture form (email/phone/etc.) to show before the first message and before any session/conversation is created, regardless of the `capture_mode` configured on the FrontFace dashboard.
+* Fix: a stale/revoked `sessionToken` (`SESSION_INVALID` / `SESSION_CONVERSATION_MISMATCH`) previously surfaced as a generic error with no recovery path. The SDK now detects this automatically (on send, on resume/hydrate, and while polling), clears the stale session, posts a `FrontFaceChatStrings.sessionExpired` system message, and — if lead capture is enabled — re-shows the lead form before the next message, so a fresh session always starts with re-verified contact info.
+
 ## 1.0.3
 
 * Fix: links inside assistant/agent Markdown messages had no visual affordance as links — they rendered in `theme.primaryColor` (often black) with no underline. Added `FrontFaceChatTheme.linkColor` (defaults to a conventional link blue, independent of `primaryColor`) and links now render underlined, like a normal URL.

@@ -32,8 +32,23 @@ void main() {
       expect(strings.talkToHuman, 'Talk to a human');
       expect(strings.loadingChat, 'Loading chat...');
       expect(strings.messageCopied, 'Copied to clipboard');
+      expect(
+        strings.sessionExpired,
+        'Your session has expired. Please start again.',
+      );
     });
   });
+
+  test(
+    'FrontFaceChatConfig requireLeadCaptureBeforeChat defaults to false',
+    () {
+      const config = FrontFaceChatConfig(
+        projectId: 'test-project-id',
+        publishableKey: 'pk_test',
+      );
+      expect(config.requireLeadCaptureBeforeChat, isFalse);
+    },
+  );
 
   group('FrontFaceChatStrings — Arabic overrides', () {
     const strings = FrontFaceChatStrings(
