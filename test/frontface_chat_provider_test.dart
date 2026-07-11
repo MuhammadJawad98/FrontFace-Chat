@@ -307,6 +307,85 @@ void main() {
         expect(provider.messages, isNotEmpty, reason: 'greeting shows first');
       },
     );
+
+    test(
+      'wins over an already-stored session that has not completed lead capture',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_session_id_${testConfig.projectId}': 'sess_old',
+          'frontface_session_token_${testConfig.projectId}': 'tok_old',
+        });
+
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..leadCaptureCompleted = false
+          ..messagesResponse = [
+            {
+              'id': 'old_msg',
+              'senderType': 'ai',
+              'content': 'Welcome back!',
+              'createdAt': DateTime(2024, 1, 1).toIso8601String(),
+            },
+          ];
+        const overrideConfig = FrontFaceChatConfig(
+          projectId: 'test-project',
+          publishableKey: 'pk_test',
+          requireLeadCaptureBeforeChat: true,
+        );
+
+        final provider = _buildProvider(fake, config: overrideConfig);
+        await provider.initialize();
+
+        expect(
+          provider.showLeadForm,
+          isTrue,
+          reason:
+              'a stored session should not bypass a still-required lead form',
+        );
+        expect(
+          provider.messages,
+          isEmpty,
+          reason: 'should not hydrate history before lead capture is done',
+        );
+      },
+    );
+
+    test(
+      'does not re-show the form for a returning session that already completed it',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_session_id_${testConfig.projectId}': 'sess_old',
+          'frontface_session_token_${testConfig.projectId}': 'tok_old',
+          'frontface_lead_completed_${testConfig.projectId}': true,
+        });
+
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..messagesResponse = [
+            {
+              'id': 'old_msg',
+              'senderType': 'ai',
+              'content': 'Welcome back!',
+              'createdAt': DateTime(2024, 1, 1).toIso8601String(),
+            },
+          ];
+        const overrideConfig = FrontFaceChatConfig(
+          projectId: 'test-project',
+          publishableKey: 'pk_test',
+          requireLeadCaptureBeforeChat: true,
+        );
+
+        final provider = _buildProvider(fake, config: overrideConfig);
+        await provider.initialize();
+
+        expect(provider.showLeadForm, isFalse);
+        expect(
+          provider.messages.any((m) => m.content == 'Welcome back!'),
+          isTrue,
+          reason: 'existing session history should hydrate normally',
+        );
+      },
+    );
   });
 
   group('session expiry', () {

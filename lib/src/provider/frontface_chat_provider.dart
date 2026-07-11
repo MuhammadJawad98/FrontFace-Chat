@@ -119,21 +119,26 @@ class FrontFaceChatProvider extends ChangeNotifier {
       _sessionId = await _store.getSessionId(_chatConfig.projectId);
       _sessionToken = await _store.getSessionToken(_chatConfig.projectId);
 
-      if (_sessionId != null) {
+      // Lead capture requirement wins even over an already-stored session —
+      // a stored sessionId only means the conversation exists server-side,
+      // not that this visitor has been identified. Without this check
+      // first, a session created before lead capture was required (or
+      // before requireLeadCaptureBeforeChat was turned on) would hydrate
+      // straight past the form.
+      if (_shouldShowLeadFormBeforeChat()) {
+        _showLeadForm = true;
+      } else if (_sessionId != null) {
         try {
           await _hydrateConversation();
         } on FrontFaceApiException catch (e) {
           if (!_isSessionExpired(e)) rethrow;
           await _handleSessionExpired();
         }
-      } else if (_shouldShowLeadFormBeforeChat()) {
-        _showLeadForm = true;
       } else {
         _appendGreetingIfNeeded();
       }
 
       _handoffAvailability = await _api.getHandoffAvailability(_visitorId!);
-      _evaluateLeadFormAfterHistory();
     } on FrontFaceApiException catch (e) {
       _error = e.message;
     } catch (_) {
@@ -482,12 +487,6 @@ class FrontFaceChatProvider extends ChangeNotifier {
     final mode = _embedConfig.leadCaptureMode;
     return mode == FrontFaceLeadCaptureMode.emailFirst ||
         mode == FrontFaceLeadCaptureMode.emailRequired;
-  }
-
-  void _evaluateLeadFormAfterHistory() {
-    if (_shouldShowLeadFormBeforeChat() && _messages.isEmpty) {
-      _showLeadForm = true;
-    }
   }
 
   void _evaluateLeadFormAfterSend() {

@@ -1,3 +1,7 @@
+## 1.0.6
+
+* Fix: a lead-capture-required session (`requireLeadCaptureBeforeChat` or dashboard `email_first`/`email_required`) could be bypassed if a session id was already stored from before lead capture was required — `initialize()` checked for an existing session before checking whether lead capture was still needed, so it would hydrate straight past the form. `_shouldShowLeadFormBeforeChat()` is now checked first, unconditionally, so it wins over an existing session too. Removed the now-redundant `_evaluateLeadFormAfterHistory()`.
+
 ## 1.0.5
 
 * Fix: scroll-to-bottom could land short of the last message on reload with a long conversation history, requiring a manual scroll to see it. Removed redundant `_scrollToBottom()` calls that raced the provider-listener-triggered one, gave the message `ListView` a generous `cacheExtent` so more content is measured up front, and switched to an overshoot-and-clamp `animateTo` target so a stale `maxScrollExtent` estimate can't strand the scroll.
