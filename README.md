@@ -271,6 +271,9 @@ flutter run
 ## Platform notes
 
 - **Android / iOS** — Fully supported.
+- **Markdown links** (e.g. `[View Details](https://…)`) open in the external browser. Host apps must allow URL queries:
+  - **iOS** — add `LSApplicationQueriesSchemes`: `https`, `http`, `mailto` to `Info.plist`
+  - **Android** — add `<queries>` `VIEW` intents for `https` / `http` / `mailto` in `AndroidManifest.xml`
 - **Web / desktop** — Should work (uses `http` + `shared_preferences`); not primary targets.
 
 ## Troubleshooting

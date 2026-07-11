@@ -67,9 +67,11 @@ class _HomePageState extends State<HomePage> {
         userBubbleColor: Color(0xFF2563EB),
       ),
       strings: const FrontFaceChatStrings(
+        textDirection: TextDirection.rtl,
         online: 'متصل',
         beforeWeChat: 'قبل الدردشة',
         continueToChat: 'متابعة',
+        viewDetails: 'عرض التفاصيل',
       ),
     );
   }

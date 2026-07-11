@@ -30,6 +30,12 @@ class FrontFaceChatStrings {
   final String messageCopied;
   final String loadingChat;
 
+  /// Label used for product detail CTAs in assistant Markdown
+  /// (e.g. `[View Details](https://…)`). The model may emit "View Listings"
+  /// on mobile and "View Details" on web — both are normalized to this
+  /// string. Override for Arabic, e.g. `عرض التفاصيل`.
+  final String viewDetails;
+
   /// Unused by the SDK. Kept for backwards compatibility with apps that
   /// still pass a custom value. Session death is recovered silently via
   /// `ensure-conversation` — the user never sees an expiry message.
@@ -75,6 +81,7 @@ class FrontFaceChatStrings {
     this.talkToHuman = 'Talk to a human',
     this.messageCopied = 'Copied to clipboard',
     this.loadingChat = 'Loading chat...',
+    this.viewDetails = 'View Details',
     this.sessionExpired = 'Your session has expired. Please start again.',
     this.title,
     this.textDirection = TextDirection.ltr,

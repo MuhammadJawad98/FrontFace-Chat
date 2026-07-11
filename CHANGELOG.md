@@ -1,3 +1,8 @@
+## 1.0.8
+
+* Fix: Markdown links like `[View Details](https://…)` in assistant replies now open in the external browser reliably (no longer blocked by `canLaunchUrl` failing on iOS/Android). Example app Info.plist / AndroidManifest updated with the required URL query declarations.
+* Fix: normalize product CTA link labels so mobile "View Listings" / Arabic equivalents render as the same `View Details` / `عرض التفاصيل` label as web (`FrontFaceChatStrings.viewDetails`).
+
 ## 1.0.7
 
 * Fix: when lead capture is enabled, the SDK no longer shows the local greeting before the lead form (even if the dashboard `capture_mode` is `email_after`). `requireLeadCaptureBeforeChat` now defaults to `true`, so the lead form is the first step of creating a session — the conversation and `assembledGreeting` start only after form submit. Set `requireLeadCaptureBeforeChat: false` to follow the dashboard mode instead.

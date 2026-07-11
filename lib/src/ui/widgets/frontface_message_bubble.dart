@@ -8,20 +8,48 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/frontface_chat_strings.dart';
 import '../../config/frontface_chat_theme.dart';
 import '../../models/frontface_models.dart';
+import '../../utils/markdown_link_labels.dart';
 import '../../utils/text_direction.dart';
 
 /// Link tap schemes allowed when rendering assistant/agent Markdown.
 /// Never allow `javascript:` or other executable schemes here.
 const _allowedLinkSchemes = {'https', 'http', 'mailto'};
 
-Future<void> _onTapMarkdownLink(String text, String? href, String title) async {
-  if (href == null) return;
-  final uri = Uri.tryParse(href);
-  if (uri == null || !_allowedLinkSchemes.contains(uri.scheme.toLowerCase())) {
-    return;
+/// Opens a Markdown link in the system browser / mail app.
+///
+/// Skips `canLaunchUrl` — on iOS/Android it often returns `false` unless the
+/// host app declares query schemes, which would silently swallow taps on
+/// "[View Details](https://…)" links in assistant replies.
+Future<void> openFrontFaceMarkdownLink(
+  String text,
+  String? href,
+  String title,
+) async {
+  if (href == null || href.trim().isEmpty) return;
+
+  var raw = href.trim();
+  if (raw.startsWith('//')) raw = 'https:$raw';
+
+  var uri = Uri.tryParse(raw);
+  if (uri == null) return;
+  if (!uri.hasScheme) {
+    uri = Uri.tryParse('https://$raw');
   }
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (uri == null) return;
+
+  final scheme = uri.scheme.toLowerCase();
+  if (!_allowedLinkSchemes.contains(scheme)) return;
+
+  try {
+    final opened = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened) {
+      await launchUrl(uri, mode: LaunchMode.platformDefault);
+    }
+  } catch (_) {
+    // Host app may still lack browser / scheme queries; fail quietly.
   }
 }
 
@@ -81,6 +109,7 @@ class FrontFaceMessageBubble extends StatelessWidget {
           ? AlignmentDirectional.centerEnd
           : AlignmentDirectional.centerStart,
       child: GestureDetector(
+        behavior: HitTestBehavior.deferToChild,
         onLongPress: () => _copyMessage(context),
         child: Container(
           constraints: BoxConstraints(
@@ -130,8 +159,13 @@ class FrontFaceMessageBubble extends StatelessWidget {
                 Directionality(
                   textDirection: detectTextDirection(message.content),
                   child: MarkdownBody(
-                    data: message.content,
-                    onTapLink: _onTapMarkdownLink,
+                    data: normalizeMarkdownDetailLinkLabels(
+                      message.content,
+                      viewDetailsLabel: strings.viewDetails,
+                    ),
+                    selectable: false,
+                    softLineBreak: true,
+                    onTapLink: openFrontFaceMarkdownLink,
                     styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
                         .copyWith(
                           p: TextStyle(
