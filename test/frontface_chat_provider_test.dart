@@ -202,6 +202,191 @@ void main() {
     );
   });
 
+  group('handoff message de-dupe', () {
+    test(
+      'chat-triggered handoff merges server history without duplicating confirmation',
+      () async {
+        const confirmation =
+            "I'm connecting you with a human agent now. Please hold on.";
+        final fake = FakeApiManager(testConfig);
+        fake.sendMessageResponder = (_) => {
+              'response': confirmation,
+              'sessionId': 'sess_1',
+              'sessionToken': 'tok_1',
+              'handoff': {
+                'triggered': true,
+                'reason': 'in_queue',
+                'queuePosition': 2,
+              },
+            };
+        fake.messagesResponse = [
+          {
+            'id': 'cust_1',
+            'senderType': 'customer',
+            'content': 'can I talk to a human',
+            'createdAt': DateTime(2024, 1, 1, 12, 0, 0).toIso8601String(),
+          },
+          {
+            'id': 'ai_handoff_1',
+            'senderType': 'ai',
+            'content': confirmation,
+            'createdAt': DateTime(2024, 1, 1, 12, 0, 1).toIso8601String(),
+          },
+        ];
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+        await provider.sendMessage('can I talk to a human');
+
+        final connecting = provider.messages
+            .where((m) => m.content == confirmation)
+            .toList();
+        expect(
+          connecting,
+          hasLength(1),
+          reason:
+              'HTTP response + messages/public must not both render the '
+              'handoff confirmation',
+        );
+        expect(connecting.single.id, 'ai_handoff_1');
+        expect(
+          provider.messages.where((m) => m.content == 'can I talk to a human'),
+          hasLength(1),
+          reason: 'visitor message must stay visible after handoff merge',
+        );
+        expect(provider.isInHandoff, isTrue);
+        expect(
+          fake.calls.where((c) => c.path.contains('/messages/public')),
+          isNotEmpty,
+          reason: 'entering handoff must fetch full server history',
+        );
+      },
+    );
+
+    test(
+      'keeps the visitor bubble when server history has not indexed it yet',
+      () async {
+        const confirmation =
+            "I'm connecting you with a human agent now. Please hold on.";
+        final fake = FakeApiManager(testConfig);
+        fake.sendMessageResponder = (_) => {
+              'response': confirmation,
+              'sessionId': 'sess_1',
+              'sessionToken': 'tok_1',
+              'handoff': {
+                'triggered': true,
+                'reason': 'in_queue',
+                'queuePosition': 1,
+              },
+            };
+        // Read-after-write lag: confirmation is on the server, but the just-
+        // posted visitor message is not in this GET yet.
+        fake.messagesResponse = [
+          {
+            'id': 'ai_handoff_1',
+            'senderType': 'ai',
+            'content': confirmation,
+            'createdAt': DateTime(2024, 1, 1, 12, 0, 1).toIso8601String(),
+          },
+        ];
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+        await provider.sendMessage('talk to human');
+
+        expect(
+          provider.messages
+              .where((m) => m.content == 'talk to human')
+              .single
+              .senderType,
+          FrontFaceSenderType.customer,
+          reason:
+              'clearing local transcript on handoff would drop this message '
+              'when the GET races ahead of the server write',
+        );
+        expect(
+          provider.messages.where((m) => m.content == confirmation),
+          hasLength(1),
+        );
+      },
+    );
+
+    test(
+      'polling a server copy drops the matching local provisional bubble',
+      () async {
+        const reply =
+            "I'm connecting you with a human agent now. Please hold on.";
+        final fake = FakeApiManager(testConfig);
+        fake.sendMessageResponder = (_) => {
+              'response': reply,
+              'sessionId': 'sess_1',
+              'sessionToken': 'tok_1',
+              'handoff': {
+                'triggered': true,
+                'reason': 'in_queue',
+              },
+            };
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        // History replace fails on enter-handoff — keep the provisional
+        // local_* bubble so a later poll can exercise content reconciliation.
+        fake.forcedErrorPathContains = '/messages/public';
+        fake.forcedError = const FrontFaceApiException(
+          code: 'NETWORK',
+          message: 'offline',
+        );
+
+        await provider.sendMessage('can I talk to a human');
+
+        expect(
+          provider.messages.where((m) => m.content == reply).single.id,
+          startsWith('local_'),
+        );
+
+        // Polls succeed with the server copy of the same text.
+        fake.forcedErrorPathContains = null;
+        fake.forcedError = null;
+        fake.messagesResponse = [
+          {
+            'id': 'ai_server_1',
+            'senderType': 'ai',
+            'content': reply,
+            'createdAt': DateTime(2024, 1, 1, 12, 0, 1).toIso8601String(),
+          },
+        ];
+
+        await Future<void>.delayed(const Duration(seconds: 3));
+
+        final copies =
+            provider.messages.where((m) => m.content == reply).toList();
+        expect(
+          copies,
+          hasLength(1),
+          reason: 'local provisional + polled server copy must collapse to one',
+        );
+        expect(copies.single.id, 'ai_server_1');
+      },
+    );
+
+    test(
+      'messages without an id stay stable across fromJson so polls do not duplicate',
+      () {
+        final json = {
+          'senderType': 'ai',
+          'content': 'Hello from the bot',
+          'createdAt': '2024-01-01T12:00:00.000Z',
+        };
+        final a = FrontFaceChatMessage.fromJson(json);
+        final b = FrontFaceChatMessage.fromJson(json);
+        expect(a.id, isNot(startsWith('local_')));
+        expect(a.id, b.id);
+        expect(a.id, startsWith('srv_'));
+      },
+    );
+  });
+
   group('updateStrings — runtime language switching', () {
     test('swaps the active strings and notifies listeners', () async {
       final fake = FakeApiManager(testConfig);

@@ -1,3 +1,11 @@
+## 1.0.10
+
+* Fix: asking for a human (e.g. "talk to human") no longer drops your own message from the UI. Entering handoff used to clear the local transcript and replace it with `GET /messages/public`; that GET can race the server write and omit the just-sent visitor bubble. We now **merge** server history into the existing transcript and de-dupe by sender + content.
+* Fix: bot/server messages no longer duplicate when the same text arrives as a local provisional HTTP bubble and again from history/polling (`_appendMessage` reconciliation, `_pollInFlight`, stable ids when `id` is missing).
+
+
+* Fix: handoff confirmation ("I'm connecting you with a human agent…") no longer appears twice. The message is returned once in the chat HTTP `response` and also stored once for `GET /messages/public` — the app was rendering both. On entering handoff we sync with the full server history (no `?after=`), bookmark the newest `createdAt`, then poll incrementally. Local provisional bubbles have no server id, so id-based de-dupe alone cannot catch this.
+
 ## 1.0.9
 
 * Fix: lead-form field 2/3 labels (e.g. dashboard "Phone Number") can be overridden via `FrontFaceChatStrings.field2Label` / `field3Label` for English or Arabic, with automatic phone-number keyboard type when the label reads as a phone field.

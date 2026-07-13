@@ -28,16 +28,23 @@ class FrontFaceChatMessage {
   bool get isVisitor => senderType == FrontFaceSenderType.customer;
 
   factory FrontFaceChatMessage.fromJson(Map<String, dynamic> json) {
+    final content = json['content']?.toString() ?? '';
+    final senderType = _parseSenderType(json['senderType']?.toString());
+    final createdAt =
+        DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now();
+    final rawId = json['id']?.toString();
+    // Never fall back to DateTime.now() — missing ids would mint a new id on
+    // every poll and duplicate the same bubble in the UI.
+    final id = (rawId != null && rawId.isNotEmpty)
+        ? rawId
+        : 'srv_${senderType.name}_${createdAt.toUtc().toIso8601String()}_${content.hashCode}';
+
     return FrontFaceChatMessage(
-      id:
-          json['id']?.toString() ??
-          DateTime.now().millisecondsSinceEpoch.toString(),
-      content: json['content']?.toString() ?? '',
-      senderType: _parseSenderType(json['senderType']?.toString()),
+      id: id,
+      content: content,
+      senderType: senderType,
       senderName: json['senderName']?.toString(),
-      createdAt:
-          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
-          DateTime.now(),
+      createdAt: createdAt,
     );
   }
 

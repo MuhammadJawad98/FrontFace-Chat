@@ -29,6 +29,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
   int _pollTick = 0;
   String? _lastMessageAt;
   bool _disposed = false;
+  bool _pollInFlight = false;
 
   String? _visitorId;
   String? _sessionId;
@@ -199,6 +200,9 @@ class FrontFaceChatProvider extends ChangeNotifier {
     final assistantText = response['response']?.toString() ?? '';
     final handoff = response['handoff'] as Map<String, dynamic>?;
 
+    // Provisional bubble for UX — if this triggers handoff, the same text is
+    // also stored server-side and would duplicate when polling unless we
+    // replace local messages with GET /messages/public (server = source of truth).
     if (assistantText.isNotEmpty) {
       _appendMessage(
         FrontFaceChatMessage.local(
@@ -210,7 +214,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
 
     if (_shouldEnterHandoff(assistantText, handoff)) {
       _applyHandoffFromResponse(handoff);
-      _startPolling();
+      await _enterHandoffMode();
     } else {
       _handoffAvailability = await _api.getHandoffAvailability(_visitorId!);
       _evaluateLeadFormAfterSend();
@@ -312,7 +316,51 @@ class FrontFaceChatProvider extends ChangeNotifier {
       sessionToken: _sessionToken,
     );
     _applyHandoffResult(result);
+    await _enterHandoffMode();
+  }
+
+  /// Enter live handoff: merge in the server history, bookmark the newest
+  /// `createdAt`, then poll with `?after=`.
+  ///
+  /// The chat HTTP response and GET /messages/public can both contain the same
+  /// handoff confirmation ("I'm connecting you…"). Local bubbles have no
+  /// server id, so id-based de-dupe alone can't catch that — but we merge
+  /// (never clear) the local transcript, relying on _appendMessage's
+  /// sender+content de-dupe to drop the local copy once the server one
+  /// arrives. We only use HTTP polling for agent messages (no Realtime), so
+  /// we never run both channels at once.
+  Future<void> _enterHandoffMode() async {
+    try {
+      await _mergeServerHistory();
+    } catch (_) {
+      // Keep provisional local messages; incremental polls may still catch up.
+    }
+    _updateStatusBanner();
     _startPolling();
+  }
+
+  /// Fetches full history (no `?after=`) and merges it into the existing
+  /// transcript via `_appendMessage`'s de-dupe — never clears first.
+  ///
+  /// The GET fires right after a POST that may have just created the
+  /// visitor's own message; the server isn't guaranteed to have indexed it
+  /// yet (read-after-write lag). Clearing `_messages` and trusting the GET
+  /// as complete would silently drop that just-sent message whenever the
+  /// fetch beat the server's own write. Merging keeps everything we already
+  /// know is real (confirmed by the POST response) while still de-duping
+  /// against the server's copy once it shows up.
+  Future<void> _mergeServerHistory() async {
+    if (_visitorId == null || _sessionId == null) return;
+
+    final messages = await _api.fetchMessages(
+      visitorId: _visitorId!,
+      conversationId: _sessionId!,
+      sessionToken: _sessionToken,
+    );
+
+    for (final message in messages) {
+      _appendMessage(message);
+    }
   }
 
   Future<void> startNewChat() async {
@@ -352,14 +400,8 @@ class FrontFaceChatProvider extends ChangeNotifier {
   Future<void> _hydrateConversation() async {
     if (_visitorId == null || _sessionId == null) return;
 
-    final messages = await _api.fetchMessages(
-      visitorId: _visitorId!,
-      conversationId: _sessionId!,
-      sessionToken: _sessionToken,
-    );
-    for (final message in messages) {
-      _appendMessage(message);
-    }
+    // initialize() already cleared `_messages` — append server history directly.
+    await _mergeServerHistory();
 
     final statusData = await _api.getConversationStatus(
       visitorId: _visitorId!,
@@ -397,6 +439,8 @@ class FrontFaceChatProvider extends ChangeNotifier {
   }
 
   Future<void> _pollMessages() async {
+    if (_pollInFlight) return;
+    _pollInFlight = true;
     try {
       final messages = await _api.fetchMessages(
         visitorId: _visitorId!,
@@ -404,16 +448,21 @@ class FrontFaceChatProvider extends ChangeNotifier {
         sessionToken: _sessionToken,
         after: _lastMessageAt,
       );
+      final beforeCount = _messages.length;
       for (final message in messages) {
         if (message.senderType == FrontFaceSenderType.customer) continue;
         _appendMessage(message);
       }
+      if (_messages.length != beforeCount) _notify();
     } on FrontFaceApiException catch (e) {
       if (_isSessionStale(e)) {
         await _recoverStaleSession();
         _notify();
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _pollInFlight = false;
+    }
   }
 
   Future<void> _pollStatus() async {
@@ -544,9 +593,37 @@ class FrontFaceChatProvider extends ChangeNotifier {
 
   void _appendMessage(FrontFaceChatMessage message) {
     if (_messages.any((m) => m.id == message.id)) return;
+
+    final content = message.content.trim();
+    final isLocal = message.id.startsWith('local_');
+
+    if (!isLocal) {
+      // Server copy of a provisional HTTP bubble (local_* id) — drop the
+      // local one so bot / handoff confirmations don't appear twice.
+      _messages.removeWhere(
+        (m) =>
+            m.id.startsWith('local_') &&
+            m.senderType == message.senderType &&
+            m.content.trim() == content,
+      );
+    }
+
+    // Same sender + text already shown (server id, earlier local, or a
+    // second poll of the same payload with a different id) — skip.
+    if (_messages.any(
+      (m) =>
+          m.senderType == message.senderType && m.content.trim() == content,
+    )) {
+      return;
+    }
+
     _messages.add(message);
     _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    _lastMessageAt = message.createdAt.toUtc().toIso8601String();
+    // Bookmark must be the newest message after sort — not the one just
+    // appended — so handoff polling `?after=` doesn't skip or re-fetch.
+    _lastMessageAt = _messages.isEmpty
+        ? null
+        : _messages.last.createdAt.toUtc().toIso8601String();
   }
 
   List<Map<String, String>> _buildConversationHistory() {
