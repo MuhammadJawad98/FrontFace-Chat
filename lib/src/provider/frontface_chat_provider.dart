@@ -1,35 +1,48 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../config/frontface_chat_config.dart';
 import '../config/frontface_chat_strings.dart';
 import '../models/frontface_models.dart';
 import '../services/frontface_api_service.dart';
+import '../services/frontface_realtime_bridge.dart';
 import '../services/frontface_visitor_store.dart';
 
-class FrontFaceChatProvider extends ChangeNotifier {
+class FrontFaceChatProvider extends ChangeNotifier
+    with WidgetsBindingObserver {
   FrontFaceChatProvider({
     required FrontFaceChatConfig config,
     FrontFaceChatStrings strings = const FrontFaceChatStrings(),
     FrontFaceApiService? api,
     FrontFaceVisitorStore? store,
+    FrontFaceRealtimeBridge? realtime,
   }) : _chatConfig = config,
        _strings = strings,
        _api = api ?? FrontFaceApiService(config: config, store: store),
-       _store = store ?? FrontFaceVisitorStore();
+       _store = store ?? FrontFaceVisitorStore(),
+       _realtime = realtime ?? FrontFaceSupabaseRealtimeBridge();
 
   final FrontFaceChatConfig _chatConfig;
   FrontFaceChatStrings _strings;
   final FrontFaceApiService _api;
   final FrontFaceVisitorStore _store;
+  final FrontFaceRealtimeBridge _realtime;
 
   final List<FrontFaceChatMessage> _messages = [];
   Timer? _pollTimer;
+  Timer? _typingStopTimer;
+  Timer? _presenceHeartbeatTimer;
+  Timer? _realtimeRefreshTimer;
   int _pollTick = 0;
   String? _lastMessageAt;
   bool _disposed = false;
   bool _pollInFlight = false;
+  bool _customerIsTyping = false;
+  bool _agentTyping = false;
+  bool _isAppForeground = true;
+  bool _lifecycleObserving = false;
 
   String? _visitorId;
   String? _sessionId;
@@ -71,6 +84,13 @@ class FrontFaceChatProvider extends ChangeNotifier {
   int? get queuePosition => _queuePosition;
   String? get statusBanner => _statusBanner;
   FrontFaceConversationStatus get status => _status;
+
+  /// True while a human agent is typing (Realtime only — never faked).
+  bool get agentTyping => _agentTyping;
+
+  /// Whether the Realtime channel is currently subscribed.
+  bool get isRealtimeConnected => _realtime.isConnected;
+
   bool get canChat =>
       !_isInitializing &&
       !_showLeadForm &&
@@ -89,11 +109,15 @@ class FrontFaceChatProvider extends ChangeNotifier {
       _status == FrontFaceConversationStatus.waiting ||
       _status == FrontFaceConversationStatus.agentActive;
 
+  bool get isAgentActive =>
+      _status == FrontFaceConversationStatus.agentActive;
+
   Future<void> initialize() async {
     if (_isInitializing) return;
     _isInitializing = true;
     _error = null;
     notifyListeners();
+    _ensureLifecycleObserver();
 
     try {
       _visitorId = await _api.getOrCreateVisitorId();
@@ -156,6 +180,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
     final trimmed = text.trim();
     if (trimmed.isEmpty || _visitorId == null || _isSending || !canChat) return;
 
+    stopTyping();
     _isSending = true;
     _error = null;
     _appendMessage(
@@ -327,8 +352,11 @@ class FrontFaceChatProvider extends ChangeNotifier {
   /// server id, so id-based de-dupe alone can't catch that — but we merge
   /// (never clear) the local transcript, relying on _appendMessage's
   /// sender+content de-dupe to drop the local copy once the server one
-  /// arrives. We only use HTTP polling for agent messages (no Realtime), so
-  /// we never run both channels at once.
+  /// arrives.
+  ///
+  /// Message recovery still uses HTTP polling. Realtime is used for ephemeral
+  /// agent typing (and optional status events); presence/typing POSTs go to
+  /// the dashboard.
   Future<void> _enterHandoffMode() async {
     try {
       await _mergeServerHistory();
@@ -337,6 +365,34 @@ class FrontFaceChatProvider extends ChangeNotifier {
     }
     _updateStatusBanner();
     _startPolling();
+    await _startPresenceHeartbeat();
+    await _startRealtime();
+  }
+
+  /// Composer keystrokes → dashboard typing indicator (agent_active only).
+  void onComposerChanged(String _) {
+    if (!isAgentActive || !_isAppForeground) return;
+    if (_visitorId == null || _sessionId == null) return;
+
+    if (!_customerIsTyping) {
+      _customerIsTyping = true;
+      unawaited(_postTyping(true));
+    }
+
+    _typingStopTimer?.cancel();
+    _typingStopTimer = Timer(const Duration(milliseconds: 1200), () {
+      _customerIsTyping = false;
+      unawaited(_postTyping(false));
+    });
+  }
+
+  /// Forces typing:stop — call on send, background, leave handoff, dispose.
+  void stopTyping() {
+    _typingStopTimer?.cancel();
+    _typingStopTimer = null;
+    if (!_customerIsTyping) return;
+    _customerIsTyping = false;
+    unawaited(_postTyping(false));
   }
 
   /// Fetches full history (no `?after=`) and merges it into the existing
@@ -364,7 +420,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
   }
 
   Future<void> startNewChat() async {
-    _stopPolling();
+    await _leaveHandoffSideEffects(sendOffline: true);
     _sessionId = null;
     _sessionToken = null;
     _messages.clear();
@@ -393,8 +449,39 @@ class FrontFaceChatProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _stopPolling();
+    if (_lifecycleObserving) {
+      WidgetsBinding.instance.removeObserver(this);
+      _lifecycleObserving = false;
+    }
+    stopTyping();
+    unawaited(_leaveHandoffSideEffects(sendOffline: true));
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _isAppForeground = true;
+        if (isInHandoff) {
+          unawaited(_startPresenceHeartbeat());
+          unawaited(_startRealtime());
+        }
+        break;
+      case AppLifecycleState.inactive:
+        if (isInHandoff) unawaited(_sendPresence('idle'));
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        _isAppForeground = false;
+        stopTyping();
+        _stopPresenceHeartbeat();
+        _clearAgentTyping();
+        unawaited(_stopRealtime());
+        if (isInHandoff) unawaited(_sendPresence('offline'));
+        break;
+    }
   }
 
   Future<void> _hydrateConversation() async {
@@ -415,6 +502,8 @@ class FrontFaceChatProvider extends ChangeNotifier {
     if (isInHandoff) {
       _updateStatusBanner();
       _startPolling();
+      await _startPresenceHeartbeat();
+      await _startRealtime();
     } else if (_messages.isEmpty) {
       _appendGreetingIfNeeded();
     }
@@ -472,6 +561,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
         conversationId: _sessionId!,
         sessionToken: _sessionToken,
       );
+      final wasAgentActive = isAgentActive;
       _applyStatus(statusData['status']?.toString());
       _agentName = statusData['assignedAgent']?['name']?.toString();
       _queuePosition = statusData['queuePosition'] as int?;
@@ -479,7 +569,10 @@ class FrontFaceChatProvider extends ChangeNotifier {
 
       if (_status == FrontFaceConversationStatus.resolved ||
           _status == FrontFaceConversationStatus.closed) {
-        _stopPolling();
+        await _leaveHandoffSideEffects(sendOffline: true);
+      } else if (wasAgentActive && !isAgentActive) {
+        stopTyping();
+        _clearAgentTyping();
       }
       _notify();
     } on FrontFaceApiException catch (e) {
@@ -510,7 +603,7 @@ class FrontFaceChatProvider extends ChangeNotifier {
   ///
   /// No user-facing "session expired" error is shown.
   Future<void> _recoverStaleSession() async {
-    _stopPolling();
+    await _leaveHandoffSideEffects(sendOffline: false);
     _sessionId = null;
     _sessionToken = null;
     _messages.clear();
@@ -714,6 +807,276 @@ class FrontFaceChatProvider extends ChangeNotifier {
       default:
         _statusBanner = null;
     }
+  }
+
+  void _ensureLifecycleObserver() {
+    if (_lifecycleObserving) return;
+    // WidgetsBinding may be unavailable in pure Dart unit tests.
+    try {
+      WidgetsBinding.instance.addObserver(this);
+      _lifecycleObserving = true;
+      final lifecycle = SchedulerBinding.instance.lifecycleState;
+      _isAppForeground = lifecycle == null ||
+          lifecycle == AppLifecycleState.resumed;
+    } catch (_) {
+      _isAppForeground = true;
+    }
+  }
+
+  Future<void> _leaveHandoffSideEffects({required bool sendOffline}) async {
+    stopTyping();
+    _stopPresenceHeartbeat();
+    _clearAgentTyping();
+    _stopPolling();
+    await _stopRealtime();
+    if (sendOffline && _visitorId != null && _sessionId != null) {
+      await _sendPresence('offline');
+    }
+  }
+
+  Future<void> _postTyping(bool isTyping) async {
+    if (_visitorId == null || _sessionId == null) return;
+    try {
+      await _api.sendTyping(
+        visitorId: _visitorId!,
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken,
+        isTyping: isTyping,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _sendPresence(String status) async {
+    if (_visitorId == null || _sessionId == null) return;
+    try {
+      await _api.sendPresence(
+        visitorId: _visitorId!,
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken,
+        status: status,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _startPresenceHeartbeat() async {
+    if (!isInHandoff || !_isAppForeground) return;
+    _stopPresenceHeartbeat();
+    await _sendPresence('online');
+    _presenceHeartbeatTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) {
+        if (_disposed || !isInHandoff || !_isAppForeground) return;
+        unawaited(_sendPresence('online'));
+      },
+    );
+  }
+
+  void _stopPresenceHeartbeat() {
+    _presenceHeartbeatTimer?.cancel();
+    _presenceHeartbeatTimer = null;
+  }
+
+  Future<void> _startRealtime() async {
+    if (_disposed || !isInHandoff) return;
+    if (!_embedConfig.realtime.canConnect) return;
+    if (_visitorId == null || _sessionId == null) return;
+
+    try {
+      final tokenRes = await _api.fetchRealtimeToken(
+        visitorId: _visitorId!,
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken,
+      );
+      final jwt = tokenRes['token']?.toString() ?? '';
+      if (jwt.isEmpty) {
+        _clearAgentTyping();
+        return;
+      }
+
+      final ok = await _realtime.connect(
+        supabaseUrl: _embedConfig.realtime.supabaseUrl,
+        apiKey: _embedConfig.realtime.apiKey,
+        jwt: jwt,
+        conversationId: _sessionId!,
+        onEvent: _onRealtimeEvent,
+        onDisconnected: () {
+          _clearAgentTyping();
+          _notify();
+        },
+      );
+
+      if (!ok) {
+        _clearAgentTyping();
+        return;
+      }
+
+      _scheduleRealtimeTokenRefresh(tokenRes['expiresAt']);
+    } catch (_) {
+      _clearAgentTyping();
+    }
+  }
+
+  void _scheduleRealtimeTokenRefresh(Object? expiresAtRaw) {
+    _realtimeRefreshTimer?.cancel();
+    _realtimeRefreshTimer = null;
+
+    int? expiresAt;
+    if (expiresAtRaw is int) {
+      expiresAt = expiresAtRaw;
+    } else if (expiresAtRaw is num) {
+      expiresAt = expiresAtRaw.toInt();
+    } else if (expiresAtRaw != null) {
+      expiresAt = int.tryParse(expiresAtRaw.toString());
+    }
+    if (expiresAt == null) return;
+
+    // expiresAt is unix seconds from the API.
+    final refreshAt = DateTime.fromMillisecondsSinceEpoch(expiresAt * 1000)
+        .subtract(const Duration(seconds: 60));
+    final delay = refreshAt.difference(DateTime.now());
+    if (delay.isNegative) {
+      unawaited(_refreshRealtimeToken());
+      return;
+    }
+    _realtimeRefreshTimer = Timer(delay, () {
+      unawaited(_refreshRealtimeToken());
+    });
+  }
+
+  Future<void> _refreshRealtimeToken() async {
+    if (_disposed || !isInHandoff) return;
+    if (_visitorId == null || _sessionId == null) return;
+    try {
+      final tokenRes = await _api.fetchRealtimeToken(
+        visitorId: _visitorId!,
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken,
+      );
+      final jwt = tokenRes['token']?.toString() ?? '';
+      if (jwt.isEmpty) {
+        await _stopRealtime();
+        _clearAgentTyping();
+        return;
+      }
+      await _realtime.refreshAuth(jwt);
+      _scheduleRealtimeTokenRefresh(tokenRes['expiresAt']);
+    } catch (_) {
+      await _stopRealtime();
+      _clearAgentTyping();
+      _notify();
+    }
+  }
+
+  Future<void> _stopRealtime() async {
+    _realtimeRefreshTimer?.cancel();
+    _realtimeRefreshTimer = null;
+    await _realtime.disconnect();
+  }
+
+  void _onRealtimeEvent(String event, Map<String, dynamic> payload) {
+    if (_disposed) return;
+    final data = _extractRealtimeData(payload);
+
+    if (event == 'typing:start' || event == 'typing:stop') {
+      final participant = data?['participant'];
+      final type = participant is Map
+          ? participant['type']?.toString()
+          : null;
+      if (type != 'agent') return;
+
+      if (event == 'typing:start') {
+        _agentTyping = true;
+        final name = participant is Map
+            ? participant['name']?.toString()
+            : null;
+        if (name != null && name.isNotEmpty) _agentName = name;
+      } else {
+        _agentTyping = false;
+      }
+      _notify();
+      return;
+    }
+
+    if (event == 'message:new') {
+      final messageJson = data?['message'];
+      if (messageJson is! Map) return;
+      final message = FrontFaceChatMessage.fromJson(
+        Map<String, dynamic>.from(messageJson),
+      );
+      if (message.senderType == FrontFaceSenderType.customer) return;
+      // Fresh agent message implies they stopped typing.
+      _agentTyping = false;
+      _appendMessage(message);
+      _notify();
+      return;
+    }
+
+    if (event == 'conversation:status_changed') {
+      final status = data?['status']?.toString();
+      final queue = data?['queuePosition'];
+      if (queue is int) _queuePosition = queue;
+      _applyStatus(status);
+      if (!isInHandoff) {
+        unawaited(_leaveHandoffSideEffects(sendOffline: true));
+      } else if (!isAgentActive) {
+        stopTyping();
+        _clearAgentTyping();
+      }
+      _updateStatusBanner();
+      _notify();
+      return;
+    }
+
+    if (event == 'conversation:assigned') {
+      final agent = data?['agent'];
+      if (agent is Map) {
+        final name = agent['name']?.toString();
+        if (name != null && name.isNotEmpty) _agentName = name;
+      }
+      _status = FrontFaceConversationStatus.agentActive;
+      _updateStatusBanner();
+      _notify();
+      return;
+    }
+
+    if (event == 'queue:position_updated') {
+      final position = data?['position'];
+      if (position is int) {
+        _queuePosition = position;
+        _updateStatusBanner();
+        _notify();
+      }
+      return;
+    }
+
+    if (event == 'conversation:resolved') {
+      final resolution = data?['resolution']?.toString();
+      if (resolution == 'ai_active') {
+        _status = FrontFaceConversationStatus.aiActive;
+      } else {
+        _status = FrontFaceConversationStatus.resolved;
+      }
+      unawaited(_leaveHandoffSideEffects(sendOffline: true));
+      _updateStatusBanner();
+      _notify();
+    }
+  }
+
+  Map<String, dynamic>? _extractRealtimeData(Map<String, dynamic> payload) {
+    final nested = payload['payload'];
+    if (nested is Map) {
+      final data = nested['data'];
+      if (data is Map) return Map<String, dynamic>.from(data);
+      return Map<String, dynamic>.from(nested);
+    }
+    final data = payload['data'];
+    if (data is Map) return Map<String, dynamic>.from(data);
+    return null;
+  }
+
+  void _clearAgentTyping() {
+    if (!_agentTyping) return;
+    _agentTyping = false;
   }
 
   void _notify() {

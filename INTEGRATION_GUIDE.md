@@ -163,6 +163,7 @@ Headers: X-FrontFace-Key, X-Visitor-Id
   "realtime": {
     "enabled": true,
     "supabaseUrl": "https://<ref>.supabase.co",
+    "apiKey": "sb_publishable_...",   // socket apikey only — NOT channel auth
     "tokenBased": true
   },
   "leadCapture": {
@@ -335,12 +336,16 @@ Headers: X-FrontFace-Session: {sessionToken}
 → 200 { "token": "eyJ...", "expiresAt": 1751234567 }
 ```
 
-Then connect to Supabase Realtime with the returned token:
+Then connect to Supabase Realtime with **two** credentials (same as the web widget / RN SDK):
+
+1. `realtime.apiKey` from bootstrap — socket `apikey` query param
+2. JWT from `/realtime-token` — `client.setAuth(jwt)` for private-channel RLS
 
 - **Channel name:** `conversation:<conversationId>`
 - **Connection:** Supabase Realtime endpoint `wss://<ref>.supabase.co/realtime/v1` with
-  `apikey = token` (the JWT from the token endpoint). Use `setAuth(token)` on the client.
-  The Dart package `supabase_flutter` (or `realtime_client`) handles this — see §12.
+  `apikey = config.realtime.apiKey`. Then `setAuth(jwt)` with the short-lived token.
+  Do **not** use the JWT as both apikey and auth — that is inconsistent with the working
+  widget/RN clients. Use `realtime_client` (or `supabase_flutter`) — see §12.
 - **Channel config:** `broadcast: { self: false }, private: true`.
 - **Subscribe only while in handoff** (`waiting`/`agent_active`); unsubscribe when you leave it.
 - **Token refresh:** schedule a refresh at `expiresAt - 60` seconds. Call the token endpoint
@@ -386,19 +391,44 @@ Headers: X-FrontFace-Session: {sessionToken}
 
 When Realtime reconnects, stop polling (and vice-versa) — never run both.
 
-### 6.6 Typing & presence (optional, only during `agent_active`)
+### 6.6 Typing & presence
+
+#### Customer typing → agent dashboard (`agent_active` + app foreground only)
 
 ```
 POST /api/widget/conversations/{conversationId}/typing
+Headers: X-FrontFace-Key, X-Visitor-Id, X-FrontFace-Session
 Body: { "isTyping": true, "participantType": "customer" }
-// debounce: send isTyping:true on keystroke, isTyping:false ~1200ms after the last keystroke
-
-POST /api/widget/conversations/{conversationId}/presence
-Body: { "status": "online" | "idle" | "offline", "visitorId": "mob_…" }
-// send "online" on entering handoff, then a heartbeat every 30s; "offline" when backgrounding
 ```
 
-Both are best-effort (ignore failures).
+- On first keystroke while `agent_active` and foregrounded: `isTyping: true`.
+- Debounce: `isTyping: false` ~1200ms after the last keystroke.
+- Always send `isTyping: false` on send, background, leave handoff, or dispose.
+
+#### Agent typing → Flutter UI (Realtime only)
+
+Listen for `typing:start` / `typing:stop` on `conversation:<id>`. If
+`participant.type == "agent"`, show/hide the typing indicator (optionally set
+`participant.name`). Clear the indicator when the socket disconnects, the agent
+leaves, or handoff ends — otherwise it can get stuck.
+
+Polling cannot deliver ephemeral typing events. If Realtime is unavailable,
+**hide** the typing indicator rather than pretending it is current.
+
+#### Customer presence → dashboard (while in handoff)
+
+```
+POST /api/widget/conversations/{conversationId}/presence
+Headers: X-FrontFace-Key, X-Visitor-Id, X-FrontFace-Session
+Body: { "status": "online" | "idle" | "offline", "visitorId": "mob_…" }
+```
+
+- Enter `waiting` / `agent_active`: send `online` immediately, then every 30s.
+- App lifecycle `inactive`: send `idle`.
+- `paused` / `hidden` / `detached`: send `offline`, cancel heartbeat + typing timer, disconnect Realtime.
+- `resumed`: restart Realtime and send `online`.
+
+Typing and presence POSTs are best-effort (ignore failures).
 
 ---
 
@@ -545,12 +575,12 @@ final tokenRes = await dio.post(
 final realtimeToken = tokenRes.data['token'] as String;
 final expiresAt = tokenRes.data['expiresAt'] as int;
 
-// 2. Connect with the JWT (supabaseUrl from bootstrap config §4)
+// 2. Connect: bootstrap apiKey for the socket, JWT for channel auth (§4 + §6.4)
 final client = RealtimeClient(
   '$supabaseUrl/realtime/v1',
-  params: {'apikey': realtimeToken},
+  params: {'apikey': realtimeApiKey}, // from embed config.realtime.apiKey
 );
-client.setAuth(realtimeToken);
+await client.setAuth(realtimeToken); // JWT from /realtime-token
 client.connect();
 
 // 3. Subscribe to a private channel

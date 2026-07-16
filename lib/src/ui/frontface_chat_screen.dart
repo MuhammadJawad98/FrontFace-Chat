@@ -41,6 +41,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
 
   int _lastMessageCount = 0;
   bool _lastSending = false;
+  bool _lastAgentTyping = false;
 
   // Computed (not cached) so it always reflects the latest typed content
   // and the latest strings.textDirection — including after a runtime
@@ -69,6 +70,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
 
   @override
   void dispose() {
+    _provider.stopTyping();
     _provider.removeListener(_onProviderUpdate);
     _controller.removeListener(_updateInputDirection);
     _controller.dispose();
@@ -79,6 +81,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
   Future<void> _sendMessage() async {
     final text = _controller.text;
     if (text.trim().isEmpty) return;
+    _provider.stopTyping();
     _controller.clear();
     // Sending always pins to the latest message (WhatsApp-style).
     _scrollToLatest(force: true);
@@ -88,9 +91,13 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
   void _onProviderUpdate() {
     final count = _provider.messages.length;
     final sending = _provider.isSending;
-    final changed = count != _lastMessageCount || sending != _lastSending;
+    final agentTyping = _provider.agentTyping;
+    final changed = count != _lastMessageCount ||
+        sending != _lastSending ||
+        agentTyping != _lastAgentTyping;
     _lastMessageCount = count;
     _lastSending = sending;
+    _lastAgentTyping = agentTyping;
     // Only nudge when content actually changed — every notifyListeners()
     // used to fire a huge animateTo and felt like jumpy overscrolling.
     if (changed) _scrollToLatest();
@@ -275,10 +282,14 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                           itemCount:
                               provider.messages.length +
-                              (provider.isSending ? 1 : 0),
+                              (provider.isSending || provider.agentTyping
+                                  ? 1
+                                  : 0),
                           itemBuilder: (context, index) {
                             // index 0 is the bottom of the chat.
-                            if (provider.isSending && index == 0) {
+                            final showTyping = provider.isSending ||
+                                provider.agentTyping;
+                            if (showTyping && index == 0) {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: FrontFaceTypingIndicator(
@@ -286,9 +297,8 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                                 ),
                               );
                             }
-                            final messageIndex = provider.isSending
-                                ? index - 1
-                                : index;
+                            final messageIndex =
+                                showTyping ? index - 1 : index;
                             final message = provider.messages[
                                 provider.messages.length - 1 - messageIndex];
                             return FrontFaceMessageBubble(
@@ -355,6 +365,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                               cursorColor: widget.theme.primaryColor,
                               textInputAction: TextInputAction.send,
                               textDirection: _inputDirection,
+                              onChanged: provider.onComposerChanged,
                               onSubmitted: (_) => _sendMessage(),
                               decoration: InputDecoration(
                                 hintText: provider.config.placeholder.isNotEmpty

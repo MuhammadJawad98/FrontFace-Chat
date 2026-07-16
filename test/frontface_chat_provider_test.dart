@@ -1,10 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontface_chat/frontface_chat.dart';
 import 'package:frontface_chat/src/services/frontface_api_service.dart';
+import 'package:frontface_chat/src/services/frontface_realtime_bridge.dart';
 import 'package:frontface_chat/src/services/frontface_visitor_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fakes/fake_api_manager.dart';
+import 'fakes/fake_realtime_bridge.dart';
 
 const _arabicStrings = FrontFaceChatStrings(
   talkToHuman: 'تحدث مع شخص',
@@ -16,6 +18,7 @@ FrontFaceChatProvider _buildProvider(
   FakeApiManager fake, {
   FrontFaceChatStrings strings = const FrontFaceChatStrings(),
   FrontFaceChatConfig? config,
+  FrontFaceRealtimeBridge? realtime,
 }) {
   final effectiveConfig = config ?? testConfig;
   final api = FrontFaceApiService(config: effectiveConfig, apiManager: fake);
@@ -24,8 +27,25 @@ FrontFaceChatProvider _buildProvider(
     strings: strings,
     api: api,
     store: FrontFaceVisitorStore(),
+    realtime: realtime,
   );
 }
+
+Map<String, dynamic> _realtimeEmbedConfig() => {
+      'enabled': true,
+      'config': {
+        'title': 'Chat with us',
+        'greeting': 'Hi! How can I help you today?',
+        'placeholder': '',
+      },
+      'leadCapture': {'enabled': false},
+      'realtime': {
+        'enabled': true,
+        'supabaseUrl': 'https://example.supabase.co',
+        'apiKey': 'sb_publishable_test',
+        'tokenBased': true,
+      },
+    };
 
 final _leadCaptureEmailAfterConfig = {
   'enabled': true,
@@ -730,6 +750,167 @@ void main() {
 
         expect(provider.showLeadForm, isTrue);
         expect(provider.messages, isEmpty);
+      },
+    );
+  });
+
+  group('typing and presence', () {
+    test(
+      'customer typing posts only while agent_active',
+      () async {
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _realtimeEmbedConfig()
+          ..handoffAvailabilityResponse = {
+            'available': true,
+            'showButton': true,
+            'buttonText': '',
+          }
+          ..sendMessageResponder = (_) => {
+                'response': 'Connecting…',
+                'sessionId': 'sess_1',
+                'sessionToken': 'tok_1',
+                'handoff': {
+                  'triggered': true,
+                  'reason': 'agent_handling',
+                },
+              };
+        final realtime = FakeRealtimeBridge();
+        final provider = _buildProvider(fake, realtime: realtime);
+        await provider.initialize();
+
+        // Still AI — typing must be ignored.
+        provider.onComposerChanged('hello');
+        expect(
+          fake.calls.where((c) => c.path.contains('/typing')),
+          isEmpty,
+        );
+
+        await provider.sendMessage('talk to human');
+        expect(provider.isAgentActive, isTrue);
+
+        provider.onComposerChanged('a');
+        final typingStarts = fake.calls
+            .where((c) => c.path.contains('/typing'))
+            .toList();
+        expect(typingStarts, isNotEmpty);
+        expect(typingStarts.last.body?['isTyping'], isTrue);
+        expect(typingStarts.last.body?['participantType'], 'customer');
+
+        provider.stopTyping();
+        final typingStops = fake.calls
+            .where((c) => c.path.contains('/typing'))
+            .toList();
+        expect(typingStops.last.body?['isTyping'], isFalse);
+      },
+    );
+
+    test(
+      'handoff starts presence online and connects Realtime with apiKey + JWT',
+      () async {
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _realtimeEmbedConfig();
+        final realtime = FakeRealtimeBridge();
+        final provider = _buildProvider(fake, realtime: realtime);
+        await provider.initialize();
+        await provider.requestHuman();
+
+        expect(provider.isInHandoff, isTrue);
+        expect(
+          fake.calls.where((c) => c.path.contains('/presence')),
+          isNotEmpty,
+        );
+        expect(
+          fake.calls
+              .where((c) => c.path.contains('/presence'))
+              .last
+              .body?['status'],
+          'online',
+        );
+        expect(
+          fake.calls.where((c) => c.path.contains('/realtime-token')),
+          isNotEmpty,
+        );
+        expect(realtime.connectCount, 1);
+        expect(realtime.lastApiKey, 'sb_publishable_test');
+        expect(realtime.lastJwt, 'jwt_test_token');
+        expect(realtime.lastConversationId, 'sess_1');
+      },
+    );
+
+    test(
+      'agent typing:start/stop from Realtime updates agentTyping',
+      () async {
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _realtimeEmbedConfig();
+        final realtime = FakeRealtimeBridge();
+        final provider = _buildProvider(fake, realtime: realtime);
+        await provider.initialize();
+        await provider.requestHuman();
+
+        expect(provider.agentTyping, isFalse);
+        realtime.emit('typing:start', {
+          'payload': {
+            'data': {
+              'participant': {'type': 'agent', 'name': 'Sam'},
+            },
+          },
+        });
+        expect(provider.agentTyping, isTrue);
+        expect(provider.agentName, 'Sam');
+
+        realtime.emit('typing:stop', {
+          'payload': {
+            'data': {
+              'participant': {'type': 'agent'},
+            },
+          },
+        });
+        expect(provider.agentTyping, isFalse);
+      },
+    );
+
+    test(
+      'Realtime disconnect clears a stuck agent typing indicator',
+      () async {
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _realtimeEmbedConfig();
+        final realtime = FakeRealtimeBridge();
+        final provider = _buildProvider(fake, realtime: realtime);
+        await provider.initialize();
+        await provider.requestHuman();
+
+        realtime.emit('typing:start', {
+          'payload': {
+            'data': {
+              'participant': {'type': 'agent', 'name': 'Sam'},
+            },
+          },
+        });
+        expect(provider.agentTyping, isTrue);
+
+        realtime.emitDisconnected();
+        expect(provider.agentTyping, isFalse);
+      },
+    );
+
+    test(
+      'customer typing events from Realtime are ignored',
+      () async {
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _realtimeEmbedConfig();
+        final realtime = FakeRealtimeBridge();
+        final provider = _buildProvider(fake, realtime: realtime);
+        await provider.initialize();
+        await provider.requestHuman();
+
+        realtime.emit('typing:start', {
+          'payload': {
+            'data': {
+              'participant': {'type': 'customer'},
+            },
+          },
+        });
+        expect(provider.agentTyping, isFalse);
       },
     );
   });

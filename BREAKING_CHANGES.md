@@ -90,13 +90,13 @@ not an obvious error.
   }
 ```
 
-**`apiKey` in this response is the Supabase project's publishable key — it is not, by itself, a
-credential that can subscribe to a conversation channel.** Don't wire it into `setAuth()` and
-expect broadcasts to arrive. It's informational (constructing the Realtime client endpoint), not
-the channel credential.
+**Two credentials are required** (same as the web widget / RN SDK):
 
-The actual per-conversation channel credential is a **short-lived JWT** fetched from a new
-endpoint, using the session token from §1:
+1. `realtime.apiKey` from bootstrap — use as the Realtime socket `apikey` query param.
+2. A short-lived per-conversation JWT from `/realtime-token` — use with `client.setAuth(jwt)`.
+
+`apiKey` alone cannot authorize a private `conversation:<id>` channel. Using the JWT as *both*
+socket apikey and `setAuth` is **incorrect** for the current backend — match the RN/widget clients.
 
 ```
 POST /api/widget/conversations/{conversationId}/realtime-token
@@ -111,8 +111,7 @@ conversation-mismatched token gets a hard `403` regardless of environment.
 
 1. Before subscribing, `POST` the `/realtime-token` endpoint with `X-FrontFace-Session` to get a
    JWT.
-2. Connect with that JWT — `params: {'apikey': token}` and `client.setAuth(token)` — not the
-   `apiKey` from bootstrap config.
+2. Connect with `params: {'apikey': config.realtime.apiKey}` and `client.setAuth(jwt)`.
 3. Channel config must add `private: true` (in addition to the existing `self: false`).
 4. Schedule a refresh at `expiresAt - 60` seconds: call `/realtime-token` again, `setAuth(newToken)`.
    If refresh fails, fall back to polling.
@@ -158,7 +157,7 @@ back yet.
 - [ ] Persist `sessionToken` alongside `sessionId` everywhere the latter is stored.
 - [ ] Add `X-FrontFace-Session: <sessionToken>` header to: continued `chat/message`, `ensure-conversation` follow-ups, `handoff`, `status`, `messages/public`, `realtime-token`.
 - [ ] Always overwrite stored `sessionToken` with the latest value from any response that returns one.
-- [ ] Replace the realtime connection: call `/realtime-token` first, use its `token` (not bootstrap `apiKey`) for `setAuth()`, add `private: true` to channel config, add refresh-before-expiry.
+- [ ] Replace the realtime connection: bootstrap `apiKey` for socket apikey, `/realtime-token` JWT for `setAuth()`, `private: true`, refresh-before-expiry.
 - [ ] Remove/guard the `POST /api/customers/identify` call — treat any response to it as non-JSON and don't block on it.
 - [ ] Re-run the smoke test in `README.md` plus a two-message conversation (to exercise the session-token continuation path) and a handoff (to exercise realtime-token).
 

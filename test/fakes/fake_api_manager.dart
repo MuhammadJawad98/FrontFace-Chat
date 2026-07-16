@@ -115,6 +115,17 @@ class FakeApiManager extends FrontFaceApiManager {
     if (path.contains('/handoff')) {
       return {'status': 'waiting', 'queuePosition': 1};
     }
+    if (path.contains('/realtime-token')) {
+      return {
+        'token': 'jwt_test_token',
+        'expiresAt':
+            DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch ~/
+                1000,
+      };
+    }
+    if (path.contains('/typing') || path.contains('/presence')) {
+      return {'ok': true};
+    }
     if (path.contains('/submit-form')) {
       return {'success': true, 'leadId': 'lead_1', 'nextAction': 'none'};
     }

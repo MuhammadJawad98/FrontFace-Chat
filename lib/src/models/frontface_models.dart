@@ -76,6 +76,40 @@ class FrontFaceChatMessage {
   }
 }
 
+/// Supabase Realtime settings from bootstrap `GET /api/embed/config/{projectId}`.
+///
+/// Use [apiKey] as the socket `apikey` query param. Channel auth uses a
+/// short-lived JWT from `POST .../realtime-token` via `setAuth(jwt)` — not
+/// this key alone.
+class FrontFaceRealtimeConfig {
+  final bool enabled;
+  final String supabaseUrl;
+  final String apiKey;
+  final bool tokenBased;
+
+  const FrontFaceRealtimeConfig({
+    this.enabled = false,
+    this.supabaseUrl = '',
+    this.apiKey = '',
+    this.tokenBased = true,
+  });
+
+  bool get canConnect =>
+      enabled && supabaseUrl.trim().isNotEmpty && apiKey.trim().isNotEmpty;
+
+  factory FrontFaceRealtimeConfig.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const FrontFaceRealtimeConfig();
+    return FrontFaceRealtimeConfig(
+      enabled: json['enabled'] as bool? ?? false,
+      supabaseUrl: json['supabaseUrl']?.toString() ?? '',
+      apiKey: json['apiKey']?.toString() ??
+          json['supabaseAnonKey']?.toString() ??
+          '',
+      tokenBased: json['tokenBased'] as bool? ?? true,
+    );
+  }
+}
+
 class FrontFaceEmbedConfig {
   final bool enabled;
   final String title;
@@ -92,6 +126,7 @@ class FrontFaceEmbedConfig {
   final String? field3Label;
   final bool field3Enabled;
   final bool field3Required;
+  final FrontFaceRealtimeConfig realtime;
 
   const FrontFaceEmbedConfig({
     this.enabled = true,
@@ -109,6 +144,7 @@ class FrontFaceEmbedConfig {
     this.field3Label,
     this.field3Enabled = false,
     this.field3Required = false,
+    this.realtime = const FrontFaceRealtimeConfig(),
   });
 
   factory FrontFaceEmbedConfig.fromJson(Map<String, dynamic> json) {
@@ -118,6 +154,7 @@ class FrontFaceEmbedConfig {
     final field2 = formFields['field_2'] as Map<String, dynamic>? ?? {};
     final field3 = formFields['field_3'] as Map<String, dynamic>? ?? {};
     final emailField = formFields['email'] as Map<String, dynamic>? ?? {};
+    final realtime = json['realtime'] as Map<String, dynamic>?;
 
     return FrontFaceEmbedConfig(
       enabled: json['enabled'] as bool? ?? true,
@@ -138,6 +175,7 @@ class FrontFaceEmbedConfig {
       field3Label: field3['label']?.toString(),
       field3Enabled: field3['enabled'] as bool? ?? false,
       field3Required: field3['required'] as bool? ?? false,
+      realtime: FrontFaceRealtimeConfig.fromJson(realtime),
     );
   }
 

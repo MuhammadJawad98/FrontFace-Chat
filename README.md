@@ -6,7 +6,7 @@ Native Flutter SDK for [FrontFace](https://frontface.app) AI chat with optional 
 
 - AI chat powered by the FrontFace Mobile SDK API
 - Lead capture form (configurable from the FrontFace dashboard)
-- Human agent handoff with live message polling
+- Human agent handoff with live message polling, agent typing (Realtime), and customer typing/presence for the dashboard
 - Session restore across app restarts (session id + session token persisted automatically)
 - Customizable theme and localized strings
 - One-line `FrontFaceChat.open()` integration

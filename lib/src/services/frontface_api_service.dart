@@ -128,6 +128,58 @@ class FrontFaceApiService {
     return data['hasCompletedForm'] as bool? ?? false;
   }
 
+  /// Best-effort customer typing indicator for the agent dashboard.
+  Future<void> sendTyping({
+    required String visitorId,
+    required String conversationId,
+    required String? sessionToken,
+    required bool isTyping,
+  }) async {
+    await _api.post(
+      '/api/widget/conversations/$conversationId/typing',
+      visitorId: visitorId,
+      sessionToken: sessionToken,
+      throwOnError: false,
+      body: {
+        'isTyping': isTyping,
+        'participantType': 'customer',
+      },
+    );
+  }
+
+  /// Best-effort customer presence for the agent dashboard.
+  Future<void> sendPresence({
+    required String visitorId,
+    required String conversationId,
+    required String? sessionToken,
+    required String status,
+  }) async {
+    await _api.post(
+      '/api/widget/conversations/$conversationId/presence',
+      visitorId: visitorId,
+      sessionToken: sessionToken,
+      throwOnError: false,
+      body: {
+        'status': status,
+        'visitorId': visitorId,
+      },
+    );
+  }
+
+  /// Short-lived JWT for private Realtime channel `conversation:<id>`.
+  Future<Map<String, dynamic>> fetchRealtimeToken({
+    required String visitorId,
+    required String conversationId,
+    required String? sessionToken,
+  }) async {
+    return _api.post(
+      '/api/widget/conversations/$conversationId/realtime-token',
+      visitorId: visitorId,
+      sessionToken: sessionToken,
+      body: const {},
+    );
+  }
+
   Future<Map<String, dynamic>> submitLeadForm({
     required String visitorId,
     required Map<String, dynamic> formData,
