@@ -6,8 +6,11 @@ import '../config/frontface_chat_theme.dart';
 import '../models/frontface_models.dart';
 import '../provider/frontface_chat_provider.dart';
 import '../utils/text_direction.dart';
+import 'widgets/frontface_channel_buttons.dart';
+import 'widgets/frontface_csat_prompt.dart';
 import 'widgets/frontface_lead_form.dart';
 import 'widgets/frontface_message_bubble.dart';
+import 'widgets/frontface_offline_form.dart';
 
 /// Full-screen native FrontFace chat UI.
 ///
@@ -242,6 +245,23 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
 
             return Column(
               children: [
+                if (provider.config.notice.enabled &&
+                    provider.config.notice.text.isNotEmpty)
+                  Container(
+                    width: double.infinity,
+                    color: widget.theme.primaryColor.withValues(alpha: 0.08),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    child: Text(
+                      provider.config.notice.text,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: widget.theme.primaryColor,
+                      ),
+                    ),
+                  ),
                 if (provider.error != null)
                   Container(
                     width: double.infinity,
@@ -271,6 +291,17 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                               field3: field3,
                             );
                           },
+                        )
+                      : provider.showOfflineForm
+                      ? FrontFaceOfflineForm(
+                          theme: widget.theme,
+                          strings: _strings,
+                          onSubmit: (name, email, message) =>
+                              provider.submitOfflineMessage(
+                            name: name,
+                            email: email,
+                            message: message,
+                          ),
                         )
                       : ListView.builder(
                           controller: _scrollController,
@@ -309,6 +340,18 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                           },
                         ),
                 ),
+                if (provider.showCsatPrompt)
+                  FrontFaceCsatPrompt(
+                    theme: widget.theme,
+                    strings: _strings,
+                    onSubmit: (rating, feedback) =>
+                        provider.submitCsat(rating, feedback: feedback),
+                  ),
+                if (provider.channels.isNotEmpty)
+                  FrontFaceChannelButtons(
+                    channels: provider.channels,
+                    theme: widget.theme,
+                  ),
                 if (provider.showHandoffButton)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),

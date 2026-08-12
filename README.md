@@ -7,6 +7,9 @@ Native Flutter SDK for [FrontFace](https://frontface.app) AI chat with optional 
 - AI chat powered by the FrontFace Mobile SDK API
 - Lead capture form (configurable from the FrontFace dashboard)
 - Human agent handoff with live message polling, agent typing (Realtime), and customer typing/presence for the dashboard
+- Support tickets (structured actions + ticket cards), CSAT ratings, offline contact form
+- Channel launcher buttons (WhatsApp, email, phone, etc.) from dashboard config
+- Customer identity verification via backend-signed JWT (`identify` / `resetUser`)
 - Session restore across app restarts (session id + session token persisted automatically)
 - Customizable theme and localized strings
 - One-line `FrontFaceChat.open()` integration
@@ -23,7 +26,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.0.0
+  frontface_chat: ^1.2.0
 ```
 
 For local development (this repo lives next to your app):
@@ -106,6 +109,55 @@ IconButton(
   icon: const Icon(Icons.support_agent),
   onPressed: () => FrontFaceChat.open(context, config: config),
 )
+```
+
+### 4. Multiple projects (white-label / multi-tenant apps)
+
+Each `FrontFaceChatConfig` is scoped to one FrontFace project. Pass a different `projectId` + `publishableKey` per tenant — session, session token, and lead-form state are stored **per projectId**, so multiple configs can coexist in one app:
+
+```dart
+final supportConfig = FrontFaceChatConfig(
+  projectId: tenantAProjectId,
+  publishableKey: tenantAPublishableKey,
+);
+
+final salesConfig = FrontFaceChatConfig(
+  projectId: tenantBProjectId,
+  publishableKey: tenantBPublishableKey,
+);
+
+// Open the right chat for the active tenant
+await FrontFaceChat.open(context, config: supportConfig);
+```
+
+Visitor id is shared device-wide (one `mob_*` id). Identity verification links that visitor to the logged-in user for each project separately.
+
+### 5. Logged-in users — identity verification
+
+When your user logs in, your **backend** mints a short-lived HS256 JWT (see [`IDENTITY_VERIFICATION_GUIDE.md`](./IDENTITY_VERIFICATION_GUIDE.md) — share this with your backend / Freshhouse team). The mobile app only forwards the token:
+
+```dart
+final provider = FrontFaceChat.createProvider(config: config);
+await provider.initialize();
+
+// After your login API returns `frontfaceToken`:
+try {
+  await FrontFaceChat.identify(
+    provider: provider,
+    identityToken: frontfaceToken,
+  );
+} on FrontFaceIdentifyException catch (e) {
+  // Never block chat — log and retry with a fresh token on next login
+  debugPrint('Identify failed: ${e.code}');
+}
+
+await FrontFaceChat.open(context, config: config); // or use the same provider
+```
+
+On logout:
+
+```dart
+await FrontFaceChat.resetUser(provider);
 ```
 
 ## Customization

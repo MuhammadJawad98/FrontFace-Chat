@@ -45,7 +45,10 @@ class FrontFaceApiService {
         'visitorId': visitorId,
         'source': 'mobile',
         if (sessionId != null) 'sessionId': sessionId,
-        if (conversationHistory != null && conversationHistory.isNotEmpty)
+        // Only send history on the first message — redundant once session exists.
+        if (sessionId == null &&
+            conversationHistory != null &&
+            conversationHistory.isNotEmpty)
           'conversationHistory': conversationHistory,
         if (context.isNotEmpty) 'context': context,
       },
@@ -180,6 +183,89 @@ class FrontFaceApiService {
     );
   }
 
+  /// Links a logged-in user to this visitor via a JWT from the tenant backend.
+  /// See [IDENTITY_VERIFICATION_GUIDE.md] — never blocks chat on failure.
+  Future<FrontFaceIdentifyResult> identifyCustomer({
+    required String visitorId,
+    required String token,
+  }) async {
+    final data = await _api.post(
+      '/api/customers/identify',
+      visitorId: visitorId,
+      body: {
+        'projectId': config.projectId,
+        'visitorId': visitorId,
+        'token': token,
+      },
+    );
+    return FrontFaceIdentifyResult.fromJson(data);
+  }
+
+  Future<void> submitCsat({
+    required String visitorId,
+    required String conversationId,
+    required String? sessionToken,
+    required int rating,
+    String? feedback,
+  }) async {
+    await _api.post(
+      '/api/widget/conversations/$conversationId/csat',
+      visitorId: visitorId,
+      sessionToken: sessionToken,
+      throwOnError: false,
+      body: {
+        'rating': rating,
+        if (feedback != null && feedback.trim().isNotEmpty)
+          'feedback': feedback.trim(),
+      },
+    );
+  }
+
+  Future<void> submitOfflineMessage({
+    required String visitorId,
+    required String name,
+    required String email,
+    required String message,
+  }) async {
+    await _api.post(
+      '/api/projects/${config.projectId}/offline-messages',
+      visitorId: visitorId,
+      body: {
+        'name': name.trim(),
+        'email': email.trim(),
+        'message': message.trim(),
+        'visitorId': visitorId,
+      },
+    );
+  }
+
+  Future<FrontFaceTicketAction> submitTicketIntentContact({
+    required String visitorId,
+    required String intentId,
+    required String? sessionToken,
+    String? email,
+    String? phone,
+  }) async {
+    final data = await _api.post(
+      '/api/ticket-intents/$intentId/contact',
+      visitorId: visitorId,
+      sessionToken: sessionToken,
+      body: {
+        if (email != null && email.trim().isNotEmpty) 'email': email.trim(),
+        if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+      },
+    );
+    final ticket = data['ticket'] as Map<String, dynamic>?;
+    final action = FrontFaceTicketAction.tryParse(ticket);
+    if (action == null) {
+      throw const FrontFaceApiException(
+        code: 'INVALID_TICKET_RESPONSE',
+        message: 'Unexpected ticket response.',
+      );
+    }
+    return action;
+  }
+
   Future<Map<String, dynamic>> submitLeadForm({
     required String visitorId,
     required Map<String, dynamic> formData,
@@ -208,6 +294,7 @@ class FrontFaceApiService {
       return {
         'device': 'mobile',
         'os': Platform.isIOS ? 'iOS' : 'Android',
+        'osVersion': Platform.operatingSystemVersion,
         'appVersion': packageInfo.version,
         'language': Platform.localeName,
       };

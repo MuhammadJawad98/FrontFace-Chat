@@ -10,6 +10,7 @@ import '../../config/frontface_chat_theme.dart';
 import '../../models/frontface_models.dart';
 import '../../utils/markdown_link_labels.dart';
 import '../../utils/text_direction.dart';
+import 'frontface_ticket_card.dart';
 
 /// Link tap schemes allowed when rendering assistant/agent Markdown.
 /// Never allow `javascript:` or other executable schemes here.
@@ -202,6 +203,14 @@ class FrontFaceMessageBubble extends StatelessWidget {
                         ),
                   ),
                 ),
+              if (message.hasTicketCard) ...[
+                const SizedBox(height: 10),
+                FrontFaceTicketCard(
+                  metadata: message.metadata,
+                  theme: theme,
+                  strings: strings,
+                ),
+              ],
             ],
           ),
         ),

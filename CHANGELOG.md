@@ -1,3 +1,15 @@
+## 1.2.0
+
+* Align with Aug 2026 API contract: handoff button only when `mode:"live"` AND `showButton:true` (AI-driven escalation — no standing button in `ticket`/`unavailable` modes).
+* Add: message `metadata` preserved on poll/hydrate (ticket cards, CSAT prompts, inactivity events survive reload).
+* Add: ticket actions from chat/handoff responses (`created`, `contact_required`, `failed`) with ticket card UI and external `accessUrl` opener.
+* Add: CSAT prompt UI (`metadata.csat_prompt`) + `POST .../csat`.
+* Add: offline message form when `showOfflineForm` + `POST .../offline-messages`.
+* Add: bootstrap channel launcher buttons (`config.channels` → WhatsApp, email, etc.).
+* Add: customer identity verification — `FrontFaceChat.identify(provider, token)` / `provider.identify()` with JWT from tenant backend; `resetUser()` on logout. See `IDENTITY_VERIFICATION_GUIDE.md` for your backend team.
+* Add: `assistantMessage.id` from server used when present to prevent duplicate AI bubbles.
+* Fix: `conversationHistory` only sent on the first message (no `sessionId`).
+
 ## 1.0.11
 
 * Add: customer typing → agent dashboard (`POST .../typing`) while `agent_active` and foregrounded, with 1200ms stop debounce.

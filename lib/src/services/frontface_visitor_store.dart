@@ -75,4 +75,12 @@ class FrontFaceVisitorStore {
     await saveSessionToken(projectId, corrupted);
     return true;
   }
+
+  /// Rotates the device visitor id (logout / resetUser). Per-project session
+  /// and lead state must be cleared separately by the caller.
+  Future<String> rotateVisitorId() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_visitorIdKey);
+    return getOrCreateVisitorId();
+  }
 }

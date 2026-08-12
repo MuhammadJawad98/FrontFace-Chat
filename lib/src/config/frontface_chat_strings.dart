@@ -46,6 +46,18 @@ class FrontFaceChatStrings {
   /// string. Override for Arabic, e.g. `عرض التفاصيل`.
   final String viewDetails;
 
+  final String ticketReferenceLabel;
+  final String viewTicket;
+  final String ticketFailed;
+  final String csatTitle;
+  final String csatSubmit;
+  final String csatThanks;
+  final String offlineTitle;
+  final String offlineName;
+  final String offlineMessage;
+  final String offlineSubmit;
+  final String offlineSuccess;
+
   /// Unused by the SDK. Kept for backwards compatibility with apps that
   /// still pass a custom value. Session death is recovered silently via
   /// `ensure-conversation` — the user never sees an expiry message.
@@ -94,6 +106,17 @@ class FrontFaceChatStrings {
     this.messageCopied = 'Copied to clipboard',
     this.loadingChat = 'Loading chat...',
     this.viewDetails = 'View Details',
+    this.ticketReferenceLabel = 'Reference',
+    this.viewTicket = 'View ticket',
+    this.ticketFailed = 'Could not create a support ticket.',
+    this.csatTitle = 'How was your experience?',
+    this.csatSubmit = 'Submit rating',
+    this.csatThanks = 'Thanks for your feedback!',
+    this.offlineTitle = 'Leave us a message',
+    this.offlineName = 'Name',
+    this.offlineMessage = 'Message',
+    this.offlineSubmit = 'Send message',
+    this.offlineSuccess = 'Message sent. We will get back to you soon.',
     this.sessionExpired = 'Your session has expired. Please start again.',
     this.title,
     this.textDirection = TextDirection.ltr,

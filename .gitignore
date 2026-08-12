@@ -10,6 +10,10 @@
 .svn/
 migrate_working_dir/
 
+# Local draft / duplicate docs (may contain notes; keep out of git)
+* copy.md
+* copy.mdc
+
 # IntelliJ related
 *.iml
 *.ipr

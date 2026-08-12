@@ -122,6 +122,7 @@ void main() {
         fake.handoffAvailabilityResponse = {
           'available': true,
           'showButton': true,
+          'mode': 'live',
           'buttonText': '',
         };
 
@@ -137,6 +138,7 @@ void main() {
       fake.handoffAvailabilityResponse = {
         'available': true,
         'showButton': true,
+        'mode': 'live',
         'buttonText': '',
       };
 
@@ -432,6 +434,7 @@ void main() {
         fake.handoffAvailabilityResponse = {
           'available': true,
           'showButton': true,
+          'mode': 'live',
           'buttonText': '',
         };
         final provider = _buildProvider(fake);
@@ -913,5 +916,50 @@ void main() {
         expect(provider.agentTyping, isFalse);
       },
     );
+  });
+
+  group('handoff mode', () {
+    test('standing button only when mode is live and showButton is true', () async {
+      final fake = FakeApiManager(testConfig)
+        ..handoffAvailabilityResponse = {
+          'available': true,
+          'showButton': true,
+          'mode': 'live',
+          'buttonText': 'Talk to a human',
+        };
+      final provider = _buildProvider(fake);
+      await provider.initialize();
+      expect(provider.showHandoffButton, isTrue);
+    });
+
+    test('no standing button when mode is ticket', () async {
+      final fake = FakeApiManager(testConfig)
+        ..handoffAvailabilityResponse = {
+          'available': true,
+          'showButton': true,
+          'mode': 'ticket',
+          'buttonText': 'Talk to a human',
+        };
+      final provider = _buildProvider(fake);
+      await provider.initialize();
+      expect(provider.showHandoffButton, isFalse);
+    });
+  });
+
+  group('customer identify', () {
+    test('identify posts JWT and returns verified identity', () async {
+      final fake = FakeApiManager(testConfig);
+      final provider = _buildProvider(fake);
+      await provider.initialize();
+
+      final result = await provider.identify('eyJ.test.token');
+
+      expect(result.verifiedIdentity, isNotNull);
+      expect(
+        fake.calls.where((c) => c.path.contains('/customers/identify')),
+        isNotEmpty,
+      );
+      expect(provider.identifyResult?.verifiedIdentity?['externalId'], 'user_1');
+    });
   });
 }

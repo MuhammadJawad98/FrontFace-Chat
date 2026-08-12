@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'src/config/frontface_chat_config.dart';
 import 'src/config/frontface_chat_strings.dart';
 import 'src/config/frontface_chat_theme.dart';
+import 'src/models/frontface_models.dart';
 import 'src/provider/frontface_chat_provider.dart';
 import 'src/services/frontface_visitor_store.dart';
 import 'src/ui/frontface_chat_screen.dart';
@@ -16,6 +17,10 @@ export 'src/provider/frontface_chat_provider.dart';
 export 'src/ui/frontface_chat_screen.dart';
 export 'src/ui/widgets/frontface_lead_form.dart';
 export 'src/ui/widgets/frontface_message_bubble.dart';
+export 'src/ui/widgets/frontface_channel_buttons.dart';
+export 'src/ui/widgets/frontface_csat_prompt.dart';
+export 'src/ui/widgets/frontface_offline_form.dart';
+export 'src/ui/widgets/frontface_ticket_card.dart';
 
 /// Entry point for opening FrontFace chat in your Flutter app.
 class FrontFaceChat {
@@ -101,5 +106,22 @@ class FrontFaceChat {
   /// least one message first, or complete the lead form).
   static Future<bool> debugCorruptSessionToken(String projectId) {
     return FrontFaceVisitorStore().corruptSessionToken(projectId);
+  }
+
+  /// Links a logged-in user to the chat visitor via a JWT from your backend.
+  ///
+  /// Share [IDENTITY_VERIFICATION_GUIDE.md] with your backend team so they
+  /// can mint the token after login. Call on each app launch when the user
+  /// is authenticated. Never blocks chat if identify fails.
+  static Future<FrontFaceIdentifyResult> identify({
+    required FrontFaceChatProvider provider,
+    required String identityToken,
+  }) {
+    return provider.identify(identityToken);
+  }
+
+  /// Logout helper — rotates visitor id and clears this project's session.
+  static Future<void> resetUser(FrontFaceChatProvider provider) {
+    return provider.resetUser();
   }
 }

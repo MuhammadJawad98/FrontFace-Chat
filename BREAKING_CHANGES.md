@@ -90,13 +90,13 @@ not an obvious error.
   }
 ```
 
-**Two credentials are required** (same as the web widget / RN SDK):
+**`apiKey` in this response is the Supabase project's publishable key — it is not, by itself, a
+credential that can subscribe to a conversation channel.** Don't wire it into `setAuth()` and
+expect broadcasts to arrive. It's informational (constructing the Realtime client endpoint), not
+the channel credential.
 
-1. `realtime.apiKey` from bootstrap — use as the Realtime socket `apikey` query param.
-2. A short-lived per-conversation JWT from `/realtime-token` — use with `client.setAuth(jwt)`.
-
-`apiKey` alone cannot authorize a private `conversation:<id>` channel. Using the JWT as *both*
-socket apikey and `setAuth` is **incorrect** for the current backend — match the RN/widget clients.
+The actual per-conversation channel credential is a **short-lived JWT** fetched from a new
+endpoint, using the session token from §1:
 
 ```
 POST /api/widget/conversations/{conversationId}/realtime-token
@@ -111,7 +111,8 @@ conversation-mismatched token gets a hard `403` regardless of environment.
 
 1. Before subscribing, `POST` the `/realtime-token` endpoint with `X-FrontFace-Session` to get a
    JWT.
-2. Connect with `params: {'apikey': config.realtime.apiKey}` and `client.setAuth(jwt)`.
+2. Connect with that JWT — `params: {'apikey': token}` and `client.setAuth(token)` — not the
+   `apiKey` from bootstrap config.
 3. Channel config must add `private: true` (in addition to the existing `self: false`).
 4. Schedule a refresh at `expiresAt - 60` seconds: call `/realtime-token` again, `setAuth(newToken)`.
    If refresh fails, fall back to polling.
@@ -121,6 +122,24 @@ Dart sketch (already updated): `INTEGRATION_GUIDE.md` §6.4 and §12.
 ---
 
 ## 3. `POST /api/customers/identify` — disabled server-side, not fixable client-side
+
+> **UPDATE (2026-07-17): RESOLVED — the endpoint is back, with a new contract.** It is
+> no longer an unauthenticated `{ email, name }` write. The body is now
+> `{ projectId, visitorId, token }`, where `token` is an **HS256 JWT signed by the
+> tenant's own backend** with the project's verification secret (dashboard → Settings
+> → Widget → Identity verification). The old provisional shape below is gone and will
+> never return: sending `{ email, name }` now fails validation. See
+> `INTEGRATION_GUIDE.md` §8 for the full contract, contact-sync semantics
+> (present/omit/null), signing snippet, Dart sample, and the `resetUser` (logout)
+> guidance. The historical explanation below is kept for context.
+>
+> **HARDENING UPDATE:** the JWT now **requires** `exp`, `iat`, and a unique
+> single-use `jti` (lifetime `exp − iat` ≤ 15 min); `TOKEN_REPLAYED` (401) is
+> returned if a `jti` is reused. The 200 response shape changed from
+> `{ customer }` to **`{ contact, verifiedIdentity }`** — `contact.*` is the
+> mutable current contact, `verifiedIdentity.*` is the read-only, service-managed
+> snapshot the token asserted (what the inbox shows verified). Verified fields
+> can no longer be forged or overwritten by agents or unsigned lead capture.
 
 ### What broke
 
@@ -157,8 +176,8 @@ back yet.
 - [ ] Persist `sessionToken` alongside `sessionId` everywhere the latter is stored.
 - [ ] Add `X-FrontFace-Session: <sessionToken>` header to: continued `chat/message`, `ensure-conversation` follow-ups, `handoff`, `status`, `messages/public`, `realtime-token`.
 - [ ] Always overwrite stored `sessionToken` with the latest value from any response that returns one.
-- [ ] Replace the realtime connection: bootstrap `apiKey` for socket apikey, `/realtime-token` JWT for `setAuth()`, `private: true`, refresh-before-expiry.
-- [ ] Remove/guard the `POST /api/customers/identify` call — treat any response to it as non-JSON and don't block on it.
+- [ ] Replace the realtime connection: call `/realtime-token` first, use its `token` (not bootstrap `apiKey`) for `setAuth()`, add `private: true` to channel config, add refresh-before-expiry.
+- [ ] ~~Remove/guard the `POST /api/customers/identify` call~~ **UPDATED:** implement the new JWT identify contract (INTEGRATION_GUIDE.md §8) — body `{ projectId, visitorId, token }`; never block chat on identify failures.
 - [ ] Re-run the smoke test in `README.md` plus a two-message conversation (to exercise the session-token continuation path) and a handoff (to exercise realtime-token).
 
 ## Verifying the fix
@@ -179,3 +198,39 @@ curl -sS https://api.frontface.app/api/chat/message \
 ```
 
 A `200` on step 2 confirms the session-token wiring is correct.
+
+---
+
+# Escalation is now AI-driven (2026-08-07)
+
+> **Audience:** the Flutter developer. **Context:** human handoff and ticketing were reworked so the
+> AI decides when to escalate (after understanding the issue), instead of a server-side keyword
+> match firing on words like "human"/"agent"/"person". The **wire shapes are unchanged** — this is a
+> behavior diff. No client code must change, but the app's handling of `mode`/`showButton` should
+> match the new behavior below.
+
+## 1. `GET /api/projects/{projectId}/handoff-availability`
+
+| Situation | Before | After |
+|---|---|---|
+| Handoff **disabled**, ticketing **on** | `mode: ticket`, `showButton: true` | `mode: unavailable` (reason `handoff_disabled`), `showButton: false` |
+| Handoff **enabled**, no agent online, ticketing **on** | `mode: ticket`, `showButton: true` | `mode: ticket`, **`showButton: false`** |
+| Handoff **enabled**, agent available | `mode: live`, `showButton` per settings | unchanged |
+
+**Action:** render the standing "Talk to a human" button **only when `showButton` is true** (now
+strictly `mode === "live"`). In `ticket`/`unavailable` states there is no button — the AI offers a
+ticket in-conversation. If you were treating `mode: ticket` as "show a Contact-support button",
+stop; rely on `showButton`.
+
+## 2. Escalation triggers
+
+There is no keyword auto-trigger any more. A customer typing "can a person help?" no longer forces a
+handoff/ticket — the AI asks a clarifying question first and escalates only when it genuinely needs a
+human. The `POST /handoff` button endpoint is unchanged (still the way to force a live handoff /
+ticket on an explicit tap).
+
+## 3. `handoff.reason` values
+
+An AI-initiated human handoff is recorded with reason `customer_request` (visible in the dashboard
+inbox filter). `button_click` and `offline_form` are unchanged. This does not affect any request you
+send; it only appears in server-side records.

@@ -37,6 +37,7 @@ class FakeApiManager extends FrontFaceApiManager {
   Map<String, dynamic> handoffAvailabilityResponse = {
     'available': true,
     'showButton': true,
+    'mode': 'live',
     'buttonText': '',
   };
 
@@ -125,6 +126,18 @@ class FakeApiManager extends FrontFaceApiManager {
     }
     if (path.contains('/typing') || path.contains('/presence')) {
       return {'ok': true};
+    }
+    if (path.contains('/customers/identify')) {
+      return {
+        'contact': {'name': 'Test User', 'email': 'test@example.com'},
+        'verifiedIdentity': {'externalId': 'user_1', 'name': 'Test User'},
+      };
+    }
+    if (path.contains('/offline-messages')) {
+      return {'success': true, 'conversationId': 'offline_1'};
+    }
+    if (path.contains('/csat')) {
+      return {'success': true};
     }
     if (path.contains('/submit-form')) {
       return {'success': true, 'leadId': 'lead_1', 'nextAction': 'none'};

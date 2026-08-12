@@ -61,6 +61,9 @@ class FrontFaceChatProvider extends ChangeNotifier
   String? _agentName;
   int? _queuePosition;
   String? _statusBanner;
+  bool _showOfflineForm = false;
+  bool _csatSubmitted = false;
+  FrontFaceIdentifyResult? _identifyResult;
 
   FrontFaceChatStrings get strings => _strings;
 
@@ -98,8 +101,18 @@ class FrontFaceChatProvider extends ChangeNotifier
       _status != FrontFaceConversationStatus.closed;
 
   bool get showHandoffButton =>
-      _handoffAvailability.showButton &&
-      _status == FrontFaceConversationStatus.aiActive;
+      _handoffAvailability.showLiveHandoffButton &&
+      _status == FrontFaceConversationStatus.aiActive &&
+      !_showOfflineForm;
+
+  bool get showOfflineForm => _showOfflineForm;
+
+  bool get showCsatPrompt =>
+      !_csatSubmitted && _messages.any((m) => m.isCsatPrompt);
+
+  List<FrontFaceChannelButton> get channels => _embedConfig.channels;
+
+  FrontFaceIdentifyResult? get identifyResult => _identifyResult;
 
   String get handoffButtonText => _handoffAvailability.buttonText.isNotEmpty
       ? _handoffAvailability.buttonText
@@ -166,12 +179,113 @@ class FrontFaceChatProvider extends ChangeNotifier
       }
 
       _handoffAvailability = await _api.getHandoffAvailability(_visitorId!);
+      if (_handoffAvailability.showOfflineForm) {
+        _showOfflineForm = true;
+      }
     } on FrontFaceApiException catch (e) {
       _error = e.message;
     } catch (_) {
       _error = _strings.failedToLoadChat;
     } finally {
       _isInitializing = false;
+      _notify();
+    }
+  }
+
+  /// Links the logged-in user to this visitor using a JWT from your backend.
+  ///
+  /// Your backend team mints the token (see `IDENTITY_VERIFICATION_GUIDE.md`).
+  /// Never blocks chat — failures throw [FrontFaceIdentifyException].
+  Future<FrontFaceIdentifyResult> identify(String token) async {
+    if (_visitorId == null) {
+      _visitorId = await _api.getOrCreateVisitorId();
+    }
+    try {
+      final result = await _api.identifyCustomer(
+        visitorId: _visitorId!,
+        token: token.trim(),
+      );
+      _identifyResult = result;
+      _notify();
+      return result;
+    } on FrontFaceApiException catch (e) {
+      throw FrontFaceIdentifyException(code: e.code, message: e.message);
+    }
+  }
+
+  /// Logout helper: rotate visitor id and clear this project's session/chat.
+  Future<void> resetUser() async {
+    await _leaveHandoffSideEffects(sendOffline: false);
+    _visitorId = await _store.rotateVisitorId();
+    _sessionId = null;
+    _sessionToken = null;
+    _messages.clear();
+    _lastMessageAt = null;
+    _status = FrontFaceConversationStatus.aiActive;
+    _agentName = null;
+    _queuePosition = null;
+    _statusBanner = null;
+    _error = null;
+    _showOfflineForm = false;
+    _csatSubmitted = false;
+    _identifyResult = null;
+    _showLeadForm = false;
+    await _store.saveSessionId(_chatConfig.projectId, null);
+    await _store.saveSessionToken(_chatConfig.projectId, null);
+    await _store.setLeadFormCompleted(_chatConfig.projectId, false);
+    _leadFormCompleted = false;
+    if (_embedConfig.leadCaptureEnabled && _chatConfig.requireLeadCaptureBeforeChat) {
+      _showLeadForm = true;
+    } else {
+      _appendGreetingIfNeeded();
+    }
+    _handoffAvailability = await _api.getHandoffAvailability(_visitorId!);
+    _notify();
+  }
+
+  Future<void> submitCsat(int rating, {String? feedback}) async {
+    if (_visitorId == null || _sessionId == null) return;
+    if (rating < 1 || rating > 5) return;
+    try {
+      await _api.submitCsat(
+        visitorId: _visitorId!,
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken,
+        rating: rating,
+        feedback: feedback,
+      );
+      _csatSubmitted = true;
+      _notify();
+    } catch (_) {}
+  }
+
+  Future<void> submitOfflineMessage({
+    required String name,
+    required String email,
+    required String message,
+  }) async {
+    if (_visitorId == null) return;
+    try {
+      await _api.submitOfflineMessage(
+        visitorId: _visitorId!,
+        name: name,
+        email: email,
+        message: message,
+      );
+      _showOfflineForm = false;
+      _error = null;
+      _messages.add(
+        FrontFaceChatMessage.local(
+          content: _strings.offlineSuccess,
+          senderType: FrontFaceSenderType.system,
+        ),
+      );
+      _notify();
+    } on FrontFaceApiException catch (e) {
+      _error = e.message;
+      _notify();
+    } catch (_) {
+      _error = _strings.failedToSendMessage;
       _notify();
     }
   }
@@ -223,18 +337,28 @@ class FrontFaceChatProvider extends ChangeNotifier
     await _applySessionFromResponse(response);
 
     final assistantText = response['response']?.toString() ?? '';
+    final ticket = FrontFaceTicketAction.tryParse(
+      response['ticket'] as Map<String, dynamic>?,
+    );
+    if (ticket != null) {
+      final skipHandoff = await _handleTicketAction(
+        ticket,
+        assistantText: assistantText,
+        response: response,
+      );
+      if (skipHandoff) {
+        _handoffAvailability = await _api.getHandoffAvailability(_visitorId!);
+        return;
+      }
+    }
+
     final handoff = response['handoff'] as Map<String, dynamic>?;
 
     // Provisional bubble for UX — if this triggers handoff, the same text is
     // also stored server-side and would duplicate when polling unless we
     // replace local messages with GET /messages/public (server = source of truth).
     if (assistantText.isNotEmpty) {
-      _appendMessage(
-        FrontFaceChatMessage.local(
-          content: assistantText,
-          senderType: FrontFaceSenderType.ai,
-        ),
-      );
+      _appendAssistantFromResponse(response, assistantText);
     }
 
     if (_shouldEnterHandoff(assistantText, handoff)) {
@@ -340,6 +464,37 @@ class FrontFaceChatProvider extends ChangeNotifier
       conversationId: _sessionId!,
       sessionToken: _sessionToken,
     );
+
+    final status = result['status']?.toString();
+    if (status == 'ticket') {
+      final ticket = FrontFaceTicketAction.tryParse(
+        result['ticket'] as Map<String, dynamic>?,
+      );
+      if (ticket != null) {
+        await _handleTicketAction(
+          ticket,
+          assistantText: result['message']?.toString() ?? '',
+          response: result,
+        );
+      }
+      return;
+    }
+
+    if (status == 'offline' || result['showOfflineForm'] == true) {
+      _showOfflineForm = true;
+      final offlineMsg = result['message']?.toString();
+      if (offlineMsg != null && offlineMsg.isNotEmpty) {
+        _appendMessage(
+          FrontFaceChatMessage.local(
+            content: offlineMsg,
+            senderType: FrontFaceSenderType.system,
+          ),
+        );
+      }
+      _notify();
+      return;
+    }
+
     _applyHandoffResult(result);
     await _enterHandoffMode();
   }
@@ -430,6 +585,8 @@ class FrontFaceChatProvider extends ChangeNotifier
     _queuePosition = null;
     _statusBanner = null;
     _error = null;
+    _showOfflineForm = false;
+    _csatSubmitted = false;
     await _store.saveSessionId(_chatConfig.projectId, null);
     await _store.saveSessionToken(_chatConfig.projectId, null);
 
@@ -682,6 +839,79 @@ class FrontFaceChatProvider extends ChangeNotifier
         senderType: FrontFaceSenderType.ai,
       ),
     );
+  }
+
+  void _appendAssistantFromResponse(
+    Map<String, dynamic> response,
+    String assistantText,
+  ) {
+    final am = response['assistantMessage'];
+    if (am is Map<String, dynamic>) {
+      final merged = Map<String, dynamic>.from(am);
+      merged['content'] = assistantText;
+      merged['senderType'] ??= 'ai';
+      _appendMessage(FrontFaceChatMessage.fromJson(merged));
+      return;
+    }
+    _appendMessage(
+      FrontFaceChatMessage.local(
+        content: assistantText,
+        senderType: FrontFaceSenderType.ai,
+      ),
+    );
+  }
+
+  /// Returns `true` when handoff must be skipped for this response.
+  Future<bool> _handleTicketAction(
+    FrontFaceTicketAction ticket, {
+    required String assistantText,
+    Map<String, dynamic>? response,
+  }) async {
+    switch (ticket.status) {
+      case FrontFaceTicketStatus.created:
+      case FrontFaceTicketStatus.existingTicketReused:
+        if (assistantText.isNotEmpty) {
+          final am = response?['assistantMessage'];
+          if (am is Map<String, dynamic>) {
+            final merged = Map<String, dynamic>.from(am);
+            merged['content'] = assistantText;
+            merged['senderType'] ??= 'ai';
+            merged['metadata'] = {
+              ...?merged['metadata'] as Map<String, dynamic>?,
+              ...ticket.toMessageMetadata().raw,
+            };
+            _appendMessage(FrontFaceChatMessage.fromJson(merged));
+          } else {
+            _appendMessage(
+              FrontFaceChatMessage.local(
+                content: assistantText,
+                senderType: FrontFaceSenderType.ai,
+                metadata: ticket.toMessageMetadata(),
+              ),
+            );
+          }
+        } else if (ticket.reference != null) {
+          _appendMessage(
+            FrontFaceChatMessage.local(
+              content: ticket.subject ?? ticket.reference!,
+              senderType: FrontFaceSenderType.ai,
+              metadata: ticket.toMessageMetadata(),
+            ),
+          );
+        }
+        return true;
+      case FrontFaceTicketStatus.contactRequired:
+        if (assistantText.isNotEmpty) {
+          _appendAssistantFromResponse(response ?? {}, assistantText);
+        }
+        return true;
+      case FrontFaceTicketStatus.failed:
+        _error = ticket.message ?? _strings.ticketFailed;
+        if (assistantText.isNotEmpty) {
+          _appendAssistantFromResponse(response ?? {}, assistantText);
+        }
+        return true;
+    }
   }
 
   void _appendMessage(FrontFaceChatMessage message) {
