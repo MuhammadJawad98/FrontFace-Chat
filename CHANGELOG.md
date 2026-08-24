@@ -1,3 +1,7 @@
+## 1.4.1
+
+* Fix: widen `geolocator` to `>=13.0.4 <15.0.0` so host apps on geolocator 14.x (e.g. Freshhouse) can resolve dependencies with `frontface_chat ^1.4.0`.
+
 ## 1.4.0
 
 * Add: optional attachments — location (Google Maps picker), images, audio, video. All off by default via `FrontFaceChatConfig.attachments`.

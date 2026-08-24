@@ -27,7 +27,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.4.0
+  frontface_chat: ^1.4.1
 ```
 
 For local development (this repo lives next to your app):
