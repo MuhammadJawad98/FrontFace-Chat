@@ -202,7 +202,7 @@ void main() {
             return {
               'response': 'Hello!',
               'sessionId': 'sess_1',
-              'sessionToken': 'tok_1',
+              'sessionToken': 'tok_refreshed',
             };
           }
           return {'response': 'Still here.', 'sessionId': 'sess_1'};
@@ -211,6 +211,12 @@ void main() {
         final provider = _buildProvider(fake);
         await provider.initialize();
 
+        // initialize() already resolved the conversation via ensure-conversation
+        expect(
+          fake.calls.any((c) => c.path.contains('/ensure-conversation')),
+          isTrue,
+        );
+
         await provider.sendMessage('hello');
         await provider.sendMessage('second message');
 
@@ -218,8 +224,10 @@ void main() {
             .where((c) => c.path.contains('/api/chat/message'))
             .toList();
         expect(messageCalls, hasLength(2));
-        expect(messageCalls[0].sessionToken, isNull);
-        expect(messageCalls[1].sessionToken, 'tok_1');
+        // Token from ensure-conversation on first continued message.
+        expect(messageCalls[0].sessionToken, 'tok_1');
+        // Refreshed token from first response is used on the follow-up.
+        expect(messageCalls[1].sessionToken, 'tok_refreshed');
       },
     );
   });
@@ -961,5 +969,116 @@ void main() {
       );
       expect(provider.identifyResult?.verifiedIdentity?['externalId'], 'user_1');
     });
+  });
+
+  group('chat history', () {
+    test(
+      'visitorId is stable across getOrCreate calls (persisted)',
+      () async {
+        final store = FrontFaceVisitorStore();
+        final first = await store.getOrCreateVisitorId();
+        final second = await store.getOrCreateVisitorId();
+        expect(first, second);
+        expect(first.startsWith('mob_'), isTrue);
+      },
+    );
+
+    test(
+      'setVisitorId persists account-keyed id used on initialize',
+      () async {
+        final fake = FakeApiManager(testConfig);
+        final provider = _buildProvider(fake);
+        await provider.setVisitorId('mob_account_user_42');
+        await provider.initialize();
+
+        expect(provider.visitorId, 'mob_account_user_42');
+        final store = FrontFaceVisitorStore();
+        expect(await store.peekVisitorId(), 'mob_account_user_42');
+      },
+    );
+
+    test(
+      'config.visitorId is applied on initialize',
+      () async {
+        const config = FrontFaceChatConfig(
+          projectId: 'test-project',
+          publishableKey: 'pk_test',
+          visitorId: 'mob_from_config',
+        );
+        final fake = FakeApiManager(config);
+        final provider = _buildProvider(fake, config: config);
+        await provider.initialize();
+        expect(provider.visitorId, 'mob_from_config');
+      },
+    );
+
+    test(
+      'missing local sessionId → ensure-conversation then hydrate history',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_visitor_id': 'mob_stable_visitor',
+          'frontface_lead_completed_${testConfig.projectId}': true,
+        });
+
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..leadCaptureCompleted = true
+          ..messagesResponse = [
+            {
+              'id': 'm1',
+              'senderType': 'customer',
+              'content': 'I need help',
+              'createdAt': '2026-08-01T10:00:00.000Z',
+            },
+            {
+              'id': 'm2',
+              'senderType': 'ai',
+              'content': 'Sure — what happened?',
+              'createdAt': '2026-08-01T10:00:01.000Z',
+            },
+          ];
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        expect(provider.showLeadForm, isFalse);
+        expect(provider.visitorId, 'mob_stable_visitor');
+        expect(provider.sessionId, 'sess_1');
+        expect(
+          fake.calls.any((c) => c.path.contains('/ensure-conversation')),
+          isTrue,
+          reason: 'must resolve conversation when local sessionId is missing',
+        );
+        expect(
+          fake.calls.any((c) => c.path.contains('/messages/public')),
+          isTrue,
+        );
+        expect(provider.messages.length, 2);
+        expect(provider.messages.first.content, 'I need help');
+        expect(provider.messages.last.content, 'Sure — what happened?');
+      },
+    );
+
+    test(
+      'no lead yet → does not ensure-conversation (form first)',
+      () async {
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..leadCaptureCompleted = false;
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        expect(provider.showLeadForm, isTrue);
+        expect(
+          fake.calls.any((c) => c.path.contains('/ensure-conversation')),
+          isFalse,
+        );
+        expect(
+          fake.calls.any((c) => c.path.contains('/messages/public')),
+          isFalse,
+        );
+      },
+    );
   });
 }

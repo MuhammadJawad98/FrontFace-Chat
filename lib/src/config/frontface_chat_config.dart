@@ -32,11 +32,20 @@ class FrontFaceChatConfig {
   /// (`leadCapture.enabled == false`).
   final bool requireLeadCaptureBeforeChat;
 
+  /// Optional account-keyed visitor id for logged-in users.
+  ///
+  /// When set, the SDK persists and uses this value instead of generating a
+  /// per-install `mob_*` id. Same user on any device then shares one history
+  /// thread. Must be stable and unguessable (e.g. HMAC from your backend) —
+  /// never the raw user id. Leave null for anonymous / device-scoped chats.
+  final String? visitorId;
+
   const FrontFaceChatConfig({
     required this.projectId,
     required this.publishableKey,
     this.baseUrl = 'https://api.frontface.app',
     this.debugLogging = false,
     this.requireLeadCaptureBeforeChat = true,
+    this.visitorId,
   });
 }

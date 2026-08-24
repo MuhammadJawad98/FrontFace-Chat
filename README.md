@@ -26,7 +26,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.2.0
+  frontface_chat: ^1.3.0
 ```
 
 For local development (this repo lives next to your app):
@@ -130,14 +130,16 @@ final salesConfig = FrontFaceChatConfig(
 await FrontFaceChat.open(context, config: supportConfig);
 ```
 
-Visitor id is shared device-wide (one `mob_*` id). Identity verification links that visitor to the logged-in user for each project separately.
-
-### 5. Logged-in users — identity verification
-
-When your user logs in, your **backend** mints a short-lived HS256 JWT (see [`IDENTITY_VERIFICATION_GUIDE.md`](./IDENTITY_VERIFICATION_GUIDE.md) — share this with your backend / Freshhouse team). The mobile app only forwards the token:
+Visitor id is shared device-wide (one `mob_*` id) by default. For **logged-in** users, pass a stable account-keyed `visitorId` from your backend so history follows the user across reinstalls/devices (see [`CHAT_HISTORY_GUIDE.md`](./CHAT_HISTORY_GUIDE.md)). Then call `identify` so agents see a verified contact.
 
 ```dart
-final provider = FrontFaceChat.createProvider(config: config);
+final provider = FrontFaceChat.createProvider(
+  config: FrontFaceChatConfig(
+    projectId: projectId,
+    publishableKey: pk,
+    visitorId: accountVisitorIdFromBackend, // from Freshhouse backend
+  ),
+);
 await provider.initialize();
 
 // After your login API returns `frontfaceToken`:
@@ -150,8 +152,6 @@ try {
   // Never block chat — log and retry with a fresh token on next login
   debugPrint('Identify failed: ${e.code}');
 }
-
-await FrontFaceChat.open(context, config: config); // or use the same provider
 ```
 
 On logout:

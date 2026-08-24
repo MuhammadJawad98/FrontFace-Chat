@@ -8,15 +8,38 @@ class FrontFaceVisitorStore {
   static const _sessionTokenPrefix = 'frontface_session_token_';
   static const _leadCompletedPrefix = 'frontface_lead_completed_';
 
+  /// Returns the stable per-install visitor id.
+  ///
+  /// Generated once on first launch and reused forever. History is keyed to
+  /// this value — regenerating it makes prior conversations unreachable.
   Future<String> getOrCreateVisitorId() async {
     final prefs = await SharedPreferences.getInstance();
     final existing = prefs.getString(_visitorIdKey);
     if (existing != null && existing.isNotEmpty) return existing;
 
-    final visitorId =
-        'mob_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(999999)}';
+    final visitorId = _generateVisitorId();
     await prefs.setString(_visitorIdKey, visitorId);
     return visitorId;
+  }
+
+  /// Overwrites the persisted visitor id (account-keyed id from your backend).
+  ///
+  /// Use for logged-in users so history follows the account across devices.
+  /// Pass a stable, unguessable id — never the raw user id.
+  Future<void> setVisitorId(String visitorId) async {
+    final trimmed = visitorId.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(visitorId, 'visitorId', 'must be non-empty');
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_visitorIdKey, trimmed);
+  }
+
+  Future<String?> peekVisitorId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final id = prefs.getString(_visitorIdKey);
+    if (id == null || id.isEmpty) return null;
+    return id;
   }
 
   Future<String?> getSessionId(String projectId) async {
@@ -82,5 +105,13 @@ class FrontFaceVisitorStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_visitorIdKey);
     return getOrCreateVisitorId();
+  }
+
+  String _generateVisitorId() {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rand.nextInt(256));
+    // UUID-ish hex without dashes — unguessable and stable once persisted.
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return 'mob_$hex';
   }
 }

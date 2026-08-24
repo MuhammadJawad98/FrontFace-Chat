@@ -288,6 +288,8 @@ class FrontFaceApiService {
 
   Future<String> getOrCreateVisitorId() => _store.getOrCreateVisitorId();
 
+  Future<void> setVisitorId(String visitorId) => _store.setVisitorId(visitorId);
+
   Future<Map<String, dynamic>> _buildContext() async {
     try {
       final packageInfo = await PackageInfo.fromPlatform();

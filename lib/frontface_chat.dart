@@ -120,6 +120,18 @@ class FrontFaceChat {
     return provider.identify(identityToken);
   }
 
+  /// Sets an account-keyed [visitorId] so chat history follows the user
+  /// across reinstalls / devices. Call after login, before opening chat.
+  ///
+  /// Your backend should mint one stable, unguessable id per user (see
+  /// `CHAT_HISTORY_GUIDE.md`). On logout call [resetUser].
+  static Future<void> setVisitorId({
+    required FrontFaceChatProvider provider,
+    required String visitorId,
+  }) {
+    return provider.setVisitorId(visitorId);
+  }
+
   /// Logout helper — rotates visitor id and clears this project's session.
   static Future<void> resetUser(FrontFaceChatProvider provider) {
     return provider.resetUser();

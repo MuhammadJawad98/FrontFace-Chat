@@ -78,6 +78,14 @@ class FrontFaceChatProvider extends ChangeNotifier
 
   List<FrontFaceChatMessage> get messages => List.unmodifiable(_messages);
   FrontFaceEmbedConfig get config => _embedConfig;
+
+  /// Stable visitor id used on every request (`X-Visitor-Id` + body).
+  /// Null until [initialize] / [setVisitorId] runs.
+  String? get visitorId => _visitorId;
+
+  /// Active conversation id (`sessionId`), when known.
+  String? get sessionId => _sessionId;
+
   bool get isInitializing => _isInitializing;
   bool get isSending => _isSending;
   bool get isHandoffLoading => _isHandoffLoading;
@@ -133,7 +141,7 @@ class FrontFaceChatProvider extends ChangeNotifier
     _ensureLifecycleObserver();
 
     try {
-      _visitorId = await _api.getOrCreateVisitorId();
+      await _resolveVisitorId();
       _embedConfig = await _api.fetchEmbedConfig(_visitorId!);
       if (!_embedConfig.enabled) {
         throw FrontFaceApiException(
@@ -167,15 +175,13 @@ class FrontFaceChatProvider extends ChangeNotifier
         _showLeadForm = true;
         // Never show a local greeting while the lead form is pending.
         _messages.clear();
-      } else if (_sessionId != null) {
+      } else {
         try {
-          await _hydrateConversation();
+          await _resolveAndHydrateHistory();
         } on FrontFaceApiException catch (e) {
           if (!_isSessionStale(e)) rethrow;
           await _recoverStaleSession();
         }
-      } else {
-        _appendGreetingIfNeeded();
       }
 
       _handoffAvailability = await _api.getHandoffAvailability(_visitorId!);
@@ -192,13 +198,57 @@ class FrontFaceChatProvider extends ChangeNotifier
     }
   }
 
+  /// Sets a stable account-keyed visitor id (from your backend after login).
+  ///
+  /// Persist before [initialize] so history follows the user across devices.
+  /// Call [resetUser] on logout.
+  Future<void> setVisitorId(String visitorId) async {
+    await _api.setVisitorId(visitorId);
+    _visitorId = visitorId.trim();
+    _notify();
+  }
+
+  Future<void> _resolveVisitorId() async {
+    final configured = _chatConfig.visitorId?.trim();
+    if (configured != null && configured.isNotEmpty) {
+      await _api.setVisitorId(configured);
+      _visitorId = configured;
+    } else {
+      _visitorId = await _api.getOrCreateVisitorId();
+    }
+    if (_chatConfig.debugLogging) {
+      // ignore: avoid_print
+      print('[FrontFace] visitorId=$_visitorId (must stay identical across launches)');
+    }
+  }
+
+  /// Resolves the visitor's active conversation, then loads full transcript.
+  ///
+  /// When local `sessionId` is missing (cleared storage, new install of the
+  /// same account-keyed visitor, etc.), `ensure-conversation` recovers it —
+  /// history is keyed to [visitorId], not to locally cached session ids.
+  Future<void> _resolveAndHydrateHistory() async {
+    if (_visitorId == null) return;
+
+    if (_sessionId == null) {
+      final ensured = await _api.ensureConversation(visitorId: _visitorId!);
+      await _applySessionFromResponse(ensured);
+    }
+
+    if (_sessionId != null) {
+      await _hydrateConversation();
+    } else {
+      _appendGreetingIfNeeded();
+    }
+  }
+
   /// Links the logged-in user to this visitor using a JWT from your backend.
   ///
   /// Your backend team mints the token (see `IDENTITY_VERIFICATION_GUIDE.md`).
   /// Never blocks chat — failures throw [FrontFaceIdentifyException].
   Future<FrontFaceIdentifyResult> identify(String token) async {
     if (_visitorId == null) {
-      _visitorId = await _api.getOrCreateVisitorId();
+      await _resolveVisitorId();
     }
     try {
       final result = await _api.identifyCustomer(
@@ -803,11 +853,11 @@ class FrontFaceChatProvider extends ChangeNotifier
     if (!_embedConfig.leadCaptureEnabled) return false;
 
     // Default Mobile UX: lead form is the first step of creating a session.
-    // Skip only when resuming an existing session that already completed
-    // lead capture — otherwise (new chat, no session, or incomplete lead)
-    // show the form and never a local greeting first.
+    // Once lead capture is completed for this visitor, skip the form even if
+    // the local sessionId was lost — history is recovered via
+    // ensure-conversation (keyed to visitorId).
     if (_chatConfig.requireLeadCaptureBeforeChat) {
-      if (_sessionId != null && _leadFormCompleted) return false;
+      if (_leadFormCompleted) return false;
       return true;
     }
 

@@ -1,3 +1,11 @@
+## 1.3.0
+
+* Fix: blank chat history when local `sessionId` was missing — on open, call `ensure-conversation` then load full `messages/public` (history is keyed to `visitorId`).
+* Fix: once lead capture is completed for a visitor, do not re-block on the lead form solely because the local session id was cleared.
+* Add: account-keyed visitor id — `FrontFaceChatConfig.visitorId`, `provider.setVisitorId()` / `FrontFaceChat.setVisitorId()` so logged-in users keep history across devices (see `CHAT_HISTORY_GUIDE.md`).
+* Add: public `provider.visitorId` / `provider.sessionId` getters for debugging.
+* Docs: `CHAT_HISTORY_GUIDE.md`.
+
 ## 1.2.0
 
 * Align with Aug 2026 API contract: handoff button only when `mode:"live"` AND `showButton:true` (AI-driven escalation — no standing button in `ticket`/`unavailable` modes).
