@@ -11,12 +11,17 @@ class FrontFaceLeadForm extends StatefulWidget {
   final Future<void> Function(String email, String? field2, String? field3)
   onSubmit;
 
+  /// Extra bottom padding so the submit button clears the home indicator /
+  /// host bottom nav when the composer is not shown.
+  final double bottomInset;
+
   const FrontFaceLeadForm({
     super.key,
     required this.config,
     required this.theme,
     required this.strings,
     required this.onSubmit,
+    this.bottomInset = 0,
   });
 
   @override
@@ -101,7 +106,7 @@ class _FrontFaceLeadFormState extends State<FrontFaceLeadForm> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + widget.bottomInset),
       child: Form(
         key: _formKey,
         child: Column(

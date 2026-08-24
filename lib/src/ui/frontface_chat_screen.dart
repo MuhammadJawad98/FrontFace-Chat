@@ -6,6 +6,7 @@ import '../config/frontface_chat_theme.dart';
 import '../models/frontface_models.dart';
 import '../provider/frontface_chat_provider.dart';
 import '../utils/text_direction.dart';
+import 'widgets/frontface_attachment_sheet.dart';
 import 'widgets/frontface_channel_buttons.dart';
 import 'widgets/frontface_csat_prompt.dart';
 import 'widgets/frontface_lead_form.dart';
@@ -20,10 +21,18 @@ class FrontFaceChatScreen extends StatefulWidget {
   final FrontFaceChatTheme theme;
   final VoidCallback? onClose;
 
+  /// Extra space above the system home-indicator / host bottom navigation.
+  ///
+  /// Use this when the chat is embedded under an app bottom nav bar that is
+  /// not reflected in [MediaQuery] padding (e.g. `80` for a typical nav).
+  /// System safe insets are always applied on top of this value.
+  final double extraBottomInset;
+
   const FrontFaceChatScreen({
     super.key,
     this.theme = const FrontFaceChatTheme(),
     this.onClose,
+    this.extraBottomInset = 0,
   });
 
   @override
@@ -284,6 +293,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                           config: provider.config,
                           theme: widget.theme,
                           strings: _strings,
+                          bottomInset: _contentBottomInset(context),
                           onSubmit: (email, field2, field3) async {
                             await provider.submitLeadForm(
                               email: email,
@@ -296,6 +306,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                       ? FrontFaceOfflineForm(
                           theme: widget.theme,
                           strings: _strings,
+                          bottomInset: _contentBottomInset(context),
                           onSubmit: (name, email, message) =>
                               provider.submitOfflineMessage(
                             name: name,
@@ -336,126 +347,247 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                               message: message,
                               theme: widget.theme,
                               strings: _strings,
+                              googleMapsApiKey: provider
+                                  .attachmentsConfig.googleMapsApiKey,
                             );
                           },
                         ),
                 ),
-                if (provider.showCsatPrompt)
-                  FrontFaceCsatPrompt(
-                    theme: widget.theme,
-                    strings: _strings,
-                    onSubmit: (rating, feedback) =>
-                        provider.submitCsat(rating, feedback: feedback),
-                  ),
-                if (provider.channels.isNotEmpty)
-                  FrontFaceChannelButtons(
-                    channels: provider.channels,
-                    theme: widget.theme,
-                  ),
-                if (provider.showHandoffButton)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: provider.isHandoffLoading
-                            ? null
-                            : () async {
-                                await provider.requestHuman();
-                              },
-                        icon: provider.isHandoffLoading
-                            ? SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: widget.theme.primaryColor,
-                                ),
-                              )
-                            : const Icon(Icons.support_agent_rounded),
-                        label: Text(provider.handoffButtonText),
-                      ),
-                    ),
-                  ),
-                if (provider.status == FrontFaceConversationStatus.resolved ||
-                    provider.status == FrontFaceConversationStatus.closed)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: widget.theme.primaryColor,
-                          foregroundColor: widget.theme.onPrimaryColor,
-                        ),
-                        onPressed: provider.startNewChat,
-                        child: Text(_strings.startNewChat),
-                      ),
-                    ),
-                  ),
-                if (provider.canChat && !provider.showLeadForm)
-                  SafeArea(
-                    top: false,
-                    child: Container(
-                      color: Colors.white,
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _controller,
-                              enabled: !provider.isSending,
-                              cursorColor: widget.theme.primaryColor,
-                              textInputAction: TextInputAction.send,
-                              textDirection: _inputDirection,
-                              onChanged: provider.onComposerChanged,
-                              onSubmitted: (_) => _sendMessage(),
-                              decoration: InputDecoration(
-                                hintText: provider.config.placeholder.isNotEmpty
-                                    ? provider.config.placeholder
-                                    : _strings.typeMessage,
-                                filled: true,
-                                fillColor: widget.theme.inputBackgroundColor,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(24),
-                                  borderSide: BorderSide.none,
-                                ),
+                if (_hasBottomChrome(provider))
+                  _BottomSafeChrome(
+                    extraBottomInset: widget.extraBottomInset,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (provider.showCsatPrompt)
+                          FrontFaceCsatPrompt(
+                            theme: widget.theme,
+                            strings: _strings,
+                            onSubmit: (rating, feedback) => provider
+                                .submitCsat(rating, feedback: feedback),
+                          ),
+                        if (provider.channels.isNotEmpty)
+                          FrontFaceChannelButtons(
+                            channels: provider.channels,
+                            theme: widget.theme,
+                          ),
+                        if (provider.showHandoffButton)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: provider.isHandoffLoading
+                                    ? null
+                                    : () async {
+                                        await provider.requestHuman();
+                                      },
+                                icon: provider.isHandoffLoading
+                                    ? SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: widget.theme.primaryColor,
+                                        ),
+                                      )
+                                    : const Icon(Icons.support_agent_rounded),
+                                label: Text(provider.handoffButtonText),
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Material(
-                            color: widget.theme.primaryColor,
-                            shape: const CircleBorder(),
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: provider.isSending ? null : _sendMessage,
-                              child: SizedBox(
-                                width: 44,
-                                height: 44,
-                                child: Transform.flip(
-                                  flipX: isRtl,
-                                  child: Icon(
-                                    Icons.send_rounded,
-                                    color: widget.theme.onPrimaryColor,
-                                    size: 20,
-                                  ),
+                        if (provider.status ==
+                                FrontFaceConversationStatus.resolved ||
+                            provider.status ==
+                                FrontFaceConversationStatus.closed)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: widget.theme.primaryColor,
+                                  foregroundColor: widget.theme.onPrimaryColor,
+                                  minimumSize: const Size.fromHeight(48),
                                 ),
+                                onPressed: provider.startNewChat,
+                                child: Text(_strings.startNewChat),
                               ),
                             ),
                           ),
-                        ],
-                      ),
+                        if (provider.canChat && !provider.showLeadForm)
+                          _ComposerBar(
+                            controller: _controller,
+                            theme: widget.theme,
+                            strings: _strings,
+                            provider: provider,
+                            inputDirection: _inputDirection,
+                            isRtl: isRtl,
+                            onSend: _sendMessage,
+                          ),
+                      ],
                     ),
                   ),
               ],
             );
           },
         ),
+      ),
+    );
+  }
+
+  bool _hasBottomChrome(FrontFaceChatProvider provider) {
+    return provider.showCsatPrompt ||
+        provider.channels.isNotEmpty ||
+        provider.showHandoffButton ||
+        provider.status == FrontFaceConversationStatus.resolved ||
+        provider.status == FrontFaceConversationStatus.closed ||
+        (provider.canChat && !provider.showLeadForm);
+  }
+
+  /// Bottom padding for scrollable forms when the composer is hidden.
+  double _contentBottomInset(BuildContext context) {
+    final view = MediaQuery.viewPaddingOf(context).bottom;
+    final pad = MediaQuery.paddingOf(context).bottom;
+    return (view > pad ? view : pad) + widget.extraBottomInset + 16;
+  }
+}
+
+/// Keeps the composer / action strip above the home indicator and any
+/// host bottom navigation ([extraBottomInset]).
+class _BottomSafeChrome extends StatelessWidget {
+  final Widget child;
+  final double extraBottomInset;
+
+  const _BottomSafeChrome({
+    required this.child,
+    required this.extraBottomInset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final viewBottom = MediaQuery.viewPaddingOf(context).bottom;
+    final padBottom = MediaQuery.paddingOf(context).bottom;
+    final systemBottom = viewBottom > padBottom ? viewBottom : padBottom;
+    final bottom = systemBottom + extraBottomInset;
+
+    return Material(
+      color: Colors.white,
+      elevation: 6,
+      shadowColor: Colors.black26,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottom),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _ComposerBar extends StatelessWidget {
+  final TextEditingController controller;
+  final FrontFaceChatTheme theme;
+  final FrontFaceChatStrings strings;
+  final FrontFaceChatProvider provider;
+  final TextDirection inputDirection;
+  final bool isRtl;
+  final VoidCallback onSend;
+
+  const _ComposerBar({
+    required this.controller,
+    required this.theme,
+    required this.strings,
+    required this.provider,
+    required this.inputDirection,
+    required this.isRtl,
+    required this.onSend,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: theme.assistantBubbleBorderColor.withValues(alpha: 0.8),
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(8, 10, 12, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (provider.attachmentsConfig.anyEnabled)
+            IconButton(
+              tooltip: strings.attach,
+              visualDensity: VisualDensity.compact,
+              onPressed: provider.isSending
+                  ? null
+                  : () => FrontFaceAttachmentSheet.show(
+                        context: context,
+                        attachments: provider.attachmentsConfig,
+                        theme: theme,
+                        strings: strings,
+                        onLocation: provider.sendLocationAttachment,
+                        onMedia: provider.sendMediaAttachment,
+                      ),
+              icon: Icon(
+                Icons.add_circle_outline_rounded,
+                color: theme.primaryColor,
+                size: 28,
+              ),
+            ),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              enabled: !provider.isSending,
+              cursorColor: theme.primaryColor,
+              textInputAction: TextInputAction.send,
+              textDirection: inputDirection,
+              minLines: 1,
+              maxLines: 5,
+              onChanged: provider.onComposerChanged,
+              onSubmitted: (_) => onSend(),
+              decoration: InputDecoration(
+                hintText: provider.config.placeholder.isNotEmpty
+                    ? provider.config.placeholder
+                    : strings.typeMessage,
+                filled: true,
+                fillColor: theme.inputBackgroundColor,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Material(
+            color: theme.primaryColor,
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: provider.isSending ? null : onSend,
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Transform.flip(
+                  flipX: isRtl,
+                  child: Icon(
+                    Icons.send_rounded,
+                    color: theme.onPrimaryColor,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

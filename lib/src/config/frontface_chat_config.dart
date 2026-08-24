@@ -1,3 +1,7 @@
+import 'frontface_attachments_config.dart';
+
+export 'frontface_attachments_config.dart';
+
 /// Credentials and settings for your FrontFace project.
 ///
 /// Get [projectId] and [publishableKey] from the FrontFace dashboard
@@ -40,6 +44,14 @@ class FrontFaceChatConfig {
   /// never the raw user id. Leave null for anonymous / device-scoped chats.
   final String? visitorId;
 
+  /// Optional attachments (location / images / audio / video). Defaults off.
+  ///
+  /// See [FrontFaceAttachmentsConfig]. When media is enabled you must supply
+  /// an [FrontFaceAttachmentsConfig.uploader]. When location is enabled you
+  /// must supply [FrontFaceAttachmentsConfig.googleMapsApiKey] (and the same
+  /// key in the host Android/iOS native projects).
+  final FrontFaceAttachmentsConfig attachments;
+
   const FrontFaceChatConfig({
     required this.projectId,
     required this.publishableKey,
@@ -47,5 +59,6 @@ class FrontFaceChatConfig {
     this.debugLogging = false,
     this.requireLeadCaptureBeforeChat = true,
     this.visitorId,
+    this.attachments = FrontFaceAttachmentsConfig.disabled,
   });
 }

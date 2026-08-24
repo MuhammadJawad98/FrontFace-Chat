@@ -10,6 +10,7 @@ Native Flutter SDK for [FrontFace](https://frontface.app) AI chat with optional 
 - Support tickets (structured actions + ticket cards), CSAT ratings, offline contact form
 - Channel launcher buttons (WhatsApp, email, phone, etc.) from dashboard config
 - Customer identity verification via backend-signed JWT (`identify` / `resetUser`)
+- Optional attachments: location (Google Maps), images, audio, video (config-gated)
 - Session restore across app restarts (session id + session token persisted automatically)
 - Customizable theme and localized strings
 - One-line `FrontFaceChat.open()` integration
@@ -26,7 +27,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.3.0
+  frontface_chat: ^1.4.0
 ```
 
 For local development (this repo lives next to your app):
@@ -162,6 +163,42 @@ await FrontFaceChat.resetUser(provider);
 
 ## Customization
 
+### Attachments (optional)
+
+All attachment types are **off by default**. Enable only what you need:
+
+```dart
+final config = FrontFaceChatConfig(
+  projectId: projectId,
+  publishableKey: pk,
+  attachments: FrontFaceAttachmentsConfig(
+    enableLocation: true,
+    enableImages: true,
+    enableAudio: true,
+    enableVideo: true,
+    googleMapsApiKey: 'YOUR_GOOGLE_MAPS_API_KEY',
+    // Required when any media type is enabled — FrontFace chat API does not
+    // accept raw file uploads yet. Upload to your CDN / storage and return HTTPS URL.
+    uploader: (pending) async {
+      final url = await myBackend.uploadFile(File(pending.path));
+      return FrontFaceUploadedAttachment(url: url, fileName: pending.fileName);
+    },
+  ),
+);
+```
+
+**Native setup (host app):**
+
+- **Android** `AndroidManifest.xml`: location / camera / media permissions, and
+  `com.google.android.geo.API_KEY` meta-data with the same Maps key.
+- **iOS** `Info.plist`: `NSLocationWhenInUseUsageDescription`,
+  `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`,
+  `NSMicrophoneUsageDescription` (if recording), and set the Maps key via
+  `GMSServices.provideAPIKey` in `AppDelegate`.
+
+Permissions are requested only when the user taps an attachment action, with an
+in-app rationale first. If permanently denied, the SDK offers to open Settings.
+
 ### Theme
 
 Match chat colors to your brand:
@@ -180,33 +217,58 @@ await FrontFaceChat.open(
 
 Available theme properties: `primaryColor`, `onPrimaryColor`, `backgroundColor`, `inputBackgroundColor`, bubble colors, `subtitleColor`, `errorColor`, `onlineIndicatorColor`, `agentNameColor`.
 
+### Bottom safe area / host bottom navigation
+
+The composer and action buttons always clear the system home indicator. If your
+app embeds chat under a bottom nav bar, pass its height as `extraBottomInset`:
+
+```dart
+await FrontFaceChat.open(
+  context,
+  config: config,
+  extraBottomInset: 80, // your BottomNavigationBar height
+);
+
+// Or when using the screen directly:
+FrontFaceChatScreen(theme: theme, extraBottomInset: 80);
+```
+
 ### Strings (i18n) and RTL
 
-Override any UI string, and set `textDirection` for right-to-left locales:
+Every user-visible label (including **attachments**, permissions, tickets, CSAT,
+and the offline form) lives on [FrontFaceChatStrings] with English defaults.
+Pass only the fields you want to translate — the rest stay optional/default:
 
 ```dart
 const arabicStrings = FrontFaceChatStrings(
   textDirection: TextDirection.rtl,
   online: 'متصل',
-  beforeWeChat: 'قبل الدردشة',
-  leadFormSubtitle: 'يرجى مشاركة بياناتك لمساعدتك بشكل أفضل.',
-  continueToChat: 'متابعة',
-  email: 'البريد الإلكتروني',
-  emailRequired: 'البريد الإلكتروني مطلوب',
-  field2Label: 'رقم الهاتف', // overrides dashboard "Phone Number"
-  // field3Label: 'الشركة',
   typeMessage: 'اكتب رسالة...',
   talkToHuman: 'تحدث مع شخص',
-  loadingChat: 'جارٍ تحميل المحادثة...',
-  messageCopied: 'تم النسخ',
-  viewDetails: 'عرض التفاصيل',
-  title: 'الدعم', // overrides the dashboard-configured title, see note below
+  // Attachments (only needed if you enabled them in config)
+  attach: 'إرفاق',
+  shareLocation: 'مشاركة الموقع',
+  sendLocation: 'إرسال هذا الموقع',
+  attachPhoto: 'مكتبة الصور',
+  takePhoto: 'التقاط صورة',
+  permissionLocationTitle: 'الوصول إلى الموقع',
+  permissionContinue: 'متابعة',
+  openSettings: 'فتح الإعدادات',
+  title: 'الدعم',
 );
 
 await FrontFaceChat.open(
   context,
   config: config,
   strings: arabicStrings,
+);
+```
+
+Partial updates at runtime:
+
+```dart
+provider.updateStrings(
+  provider.strings.copyWith(attach: 'إرفاق', shareLocation: 'مشاركة الموقع'),
 );
 ```
 

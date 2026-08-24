@@ -10,6 +10,7 @@ import '../../config/frontface_chat_theme.dart';
 import '../../models/frontface_models.dart';
 import '../../utils/markdown_link_labels.dart';
 import '../../utils/text_direction.dart';
+import 'frontface_attachment_card.dart';
 import 'frontface_ticket_card.dart';
 
 /// Link tap schemes allowed when rendering assistant/agent Markdown.
@@ -58,12 +59,14 @@ class FrontFaceMessageBubble extends StatelessWidget {
   final FrontFaceChatMessage message;
   final FrontFaceChatTheme theme;
   final FrontFaceChatStrings strings;
+  final String? googleMapsApiKey;
 
   const FrontFaceMessageBubble({
     super.key,
     required this.message,
     required this.theme,
     this.strings = const FrontFaceChatStrings(),
+    this.googleMapsApiKey,
   });
 
   Future<void> _copyMessage(BuildContext context) async {
@@ -146,7 +149,15 @@ class FrontFaceMessageBubble extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
               ],
-              if (isVisitor)
+              if (message.attachment != null) ...[
+                FrontFaceAttachmentCard(
+                  attachment: message.attachment!,
+                  theme: theme,
+                  strings: strings,
+                  onPrimary: isVisitor,
+                  googleMapsApiKey: googleMapsApiKey,
+                ),
+              ] else if (isVisitor)
                 Text(
                   message.content,
                   textDirection: detectTextDirection(message.content),
@@ -169,38 +180,38 @@ class FrontFaceMessageBubble extends StatelessWidget {
                     onTapLink: openFrontFaceMarkdownLink,
                     styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
                         .copyWith(
-                          p: TextStyle(
-                            fontSize: 15,
-                            height: 1.35,
-                            color: theme.assistantBubbleTextColor,
-                          ),
-                          strong: TextStyle(
-                            fontSize: 15,
-                            height: 1.35,
-                            fontWeight: FontWeight.w700,
-                            color: theme.assistantBubbleTextColor,
-                          ),
-                          em: TextStyle(
-                            fontSize: 15,
-                            height: 1.35,
-                            fontStyle: FontStyle.italic,
-                            color: theme.assistantBubbleTextColor,
-                          ),
-                          listBullet: TextStyle(
-                            fontSize: 15,
-                            color: theme.assistantBubbleTextColor,
-                          ),
-                          a: TextStyle(
-                            color: theme.linkColor,
-                            decoration: TextDecoration.underline,
-                            decorationColor: theme.linkColor,
-                          ),
-                          code: TextStyle(
-                            fontSize: 13.5,
-                            backgroundColor: theme.backgroundColor,
-                            color: theme.assistantBubbleTextColor,
-                          ),
-                        ),
+                      p: TextStyle(
+                        fontSize: 15,
+                        height: 1.35,
+                        color: theme.assistantBubbleTextColor,
+                      ),
+                      strong: TextStyle(
+                        fontSize: 15,
+                        height: 1.35,
+                        fontWeight: FontWeight.w700,
+                        color: theme.assistantBubbleTextColor,
+                      ),
+                      em: TextStyle(
+                        fontSize: 15,
+                        height: 1.35,
+                        fontStyle: FontStyle.italic,
+                        color: theme.assistantBubbleTextColor,
+                      ),
+                      listBullet: TextStyle(
+                        fontSize: 15,
+                        color: theme.assistantBubbleTextColor,
+                      ),
+                      a: TextStyle(
+                        color: theme.linkColor,
+                        decoration: TextDecoration.underline,
+                        decorationColor: theme.linkColor,
+                      ),
+                      code: TextStyle(
+                        fontSize: 13.5,
+                        backgroundColor: theme.backgroundColor,
+                        color: theme.assistantBubbleTextColor,
+                      ),
+                    ),
                   ),
                 ),
               if (message.hasTicketCard) ...[

@@ -1,3 +1,5 @@
+import '../config/frontface_attachments_config.dart';
+
 enum FrontFaceSenderType { customer, agent, ai, system }
 
 enum FrontFaceConversationStatus {
@@ -79,6 +81,11 @@ class FrontFaceChatMessage {
   bool get hasTicketCard => metadata.ticketCard != null;
 
   bool get isCsatPrompt => metadata.isCsatPrompt;
+
+  FrontFaceAttachmentPayload? get attachment => FrontFaceAttachmentPayload.tryParse(
+        content: content,
+        metadata: metadata.raw,
+      );
 
   factory FrontFaceChatMessage.fromJson(Map<String, dynamic> json) {
     final content = json['content']?.toString() ?? '';

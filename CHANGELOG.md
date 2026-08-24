@@ -1,3 +1,12 @@
+## 1.4.0
+
+* Add: optional attachments — location (Google Maps picker), images, audio, video. All off by default via `FrontFaceChatConfig.attachments`.
+* Add: professional permission flow (rationale dialog → system prompt → Settings for permanently denied).
+* Add: host `uploader` callback for media (FrontFace chat API has no binary upload yet — host returns a public HTTPS URL).
+* Add: `googleMapsApiKey` in attachments config for the map picker + static map previews (also configure the key in Android/iOS native projects).
+* Add: all attachment / permission labels are on `FrontFaceChatStrings` (optional overrides) with `copyWith` for partial / runtime translations.
+* Fix: bottom composer / actions respect SafeArea + optional `extraBottomInset` so content is not clipped by the home indicator or host bottom nav.
+
 ## 1.3.0
 
 * Fix: blank chat history when local `sessionId` was missing — on open, call `ensure-conversation` then load full `messages/public` (history is keyed to `visitorId`).

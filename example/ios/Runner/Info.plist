@@ -52,5 +52,14 @@
 		<string>http</string>
 		<string>mailto</string>
 	</array>
+	<!-- Optional attachments (enable via FrontFaceAttachmentsConfig) -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Share your location with support so we can help you better.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo or video to send to support.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Attach a photo or video from your library for support.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Record audio to send to support.</string>
 </dict>
 </plist>

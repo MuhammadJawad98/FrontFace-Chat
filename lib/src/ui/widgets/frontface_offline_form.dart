@@ -8,11 +8,16 @@ class FrontFaceOfflineForm extends StatefulWidget {
   final FrontFaceChatStrings strings;
   final Future<void> Function(String name, String email, String message) onSubmit;
 
+  /// Extra bottom padding so the submit button clears the home indicator /
+  /// host bottom nav.
+  final double bottomInset;
+
   const FrontFaceOfflineForm({
     super.key,
     required this.theme,
     required this.strings,
     required this.onSubmit,
+    this.bottomInset = 0,
   });
 
   @override
@@ -50,8 +55,8 @@ class _FrontFaceOfflineFormState extends State<FrontFaceOfflineForm> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + widget.bottomInset),
       child: Form(
         key: _formKey,
         child: Column(
@@ -95,6 +100,7 @@ class _FrontFaceOfflineFormState extends State<FrontFaceOfflineForm> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: widget.theme.primaryColor,
                 foregroundColor: widget.theme.onPrimaryColor,
+                minimumSize: const Size.fromHeight(48),
               ),
               onPressed: _submitting ? null : _submit,
               child: Text(widget.strings.offlineSubmit),

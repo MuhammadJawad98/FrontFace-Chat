@@ -9,6 +9,7 @@ import 'src/provider/frontface_chat_provider.dart';
 import 'src/services/frontface_visitor_store.dart';
 import 'src/ui/frontface_chat_screen.dart';
 
+export 'src/config/frontface_attachments_config.dart';
 export 'src/config/frontface_chat_config.dart';
 export 'src/config/frontface_chat_strings.dart';
 export 'src/config/frontface_chat_theme.dart';
@@ -21,6 +22,9 @@ export 'src/ui/widgets/frontface_channel_buttons.dart';
 export 'src/ui/widgets/frontface_csat_prompt.dart';
 export 'src/ui/widgets/frontface_offline_form.dart';
 export 'src/ui/widgets/frontface_ticket_card.dart';
+export 'src/ui/widgets/frontface_attachment_sheet.dart';
+export 'src/ui/widgets/frontface_attachment_card.dart';
+export 'src/ui/widgets/frontface_location_picker.dart';
 
 /// Entry point for opening FrontFace chat in your Flutter app.
 class FrontFaceChat {
@@ -45,13 +49,17 @@ class FrontFaceChat {
     required FrontFaceChatConfig config,
     FrontFaceChatTheme theme = const FrontFaceChatTheme(),
     FrontFaceChatStrings strings = const FrontFaceChatStrings(),
+    double extraBottomInset = 0,
   }) {
     return Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (routeContext) => ChangeNotifierProvider(
           create: (_) =>
               FrontFaceChatProvider(config: config, strings: strings),
-          child: FrontFaceChatScreen(theme: theme),
+          child: FrontFaceChatScreen(
+            theme: theme,
+            extraBottomInset: extraBottomInset,
+          ),
         ),
       ),
     );
@@ -86,12 +94,18 @@ class FrontFaceChat {
     Color? backgroundColor,
     Color? foregroundColor,
     IconData icon = Icons.chat_bubble_outline,
+    double extraBottomInset = 0,
   }) {
     return FloatingActionButton(
       backgroundColor: backgroundColor ?? theme.primaryColor,
       foregroundColor: foregroundColor ?? theme.onPrimaryColor,
-      onPressed: () =>
-          open(context, config: config, theme: theme, strings: strings),
+      onPressed: () => open(
+        context,
+        config: config,
+        theme: theme,
+        strings: strings,
+        extraBottomInset: extraBottomInset,
+      ),
       child: Icon(icon),
     );
   }

@@ -22,7 +22,9 @@ class FrontFaceChatProvider extends ChangeNotifier
        _strings = strings,
        _api = api ?? FrontFaceApiService(config: config, store: store),
        _store = store ?? FrontFaceVisitorStore(),
-       _realtime = realtime ?? FrontFaceSupabaseRealtimeBridge();
+       _realtime = realtime ?? FrontFaceSupabaseRealtimeBridge() {
+    config.attachments.validate();
+  }
 
   final FrontFaceChatConfig _chatConfig;
   FrontFaceChatStrings _strings;
@@ -78,6 +80,9 @@ class FrontFaceChatProvider extends ChangeNotifier
 
   List<FrontFaceChatMessage> get messages => List.unmodifiable(_messages);
   FrontFaceEmbedConfig get config => _embedConfig;
+
+  /// Attachment options from [FrontFaceChatConfig.attachments].
+  FrontFaceAttachmentsConfig get attachmentsConfig => _chatConfig.attachments;
 
   /// Stable visitor id used on every request (`X-Visitor-Id` + body).
   /// Null until [initialize] / [setVisitorId] runs.
@@ -367,6 +372,98 @@ class FrontFaceChatProvider extends ChangeNotifier
       }
     } catch (_) {
       _error = _strings.failedToSendMessage;
+    } finally {
+      _isSending = false;
+      _notify();
+    }
+  }
+
+  /// Sends a location pin (maps URL) as a chat message.
+  Future<void> sendLocationAttachment(FrontFaceAttachmentPayload location) async {
+    if (location.kind != FrontFaceAttachmentKind.location) return;
+    if (_visitorId == null || _isSending || !canChat) return;
+    if (!_chatConfig.attachments.enableLocation) return;
+
+    final content = location.toMessageContent(_strings);
+    final meta = FrontFaceMessageMetadata(location.toMetadata());
+
+    stopTyping();
+    _isSending = true;
+    _error = null;
+    _appendMessage(
+      FrontFaceChatMessage.local(
+        content: content,
+        senderType: FrontFaceSenderType.customer,
+        metadata: meta,
+      ),
+    );
+    _notify();
+
+    try {
+      await _deliverMessage(content);
+    } on FrontFaceApiException catch (e) {
+      if (_isSessionStale(e)) {
+        await _recoverStaleSession();
+      } else {
+        _error = e.message;
+      }
+    } catch (_) {
+      _error = _strings.failedToSendMessage;
+    } finally {
+      _isSending = false;
+      _notify();
+    }
+  }
+
+  /// Uploads media via the host [FrontFaceAttachmentsConfig.uploader], then
+  /// sends the resulting HTTPS URL as a chat message.
+  Future<void> sendMediaAttachment(FrontFacePendingAttachment pending) async {
+    if (_visitorId == null || _isSending || !canChat) return;
+    final cfg = _chatConfig.attachments;
+    final uploader = cfg.uploader;
+    if (uploader == null) {
+      _error = _strings.attachmentUploadFailed;
+      _notify();
+      return;
+    }
+    final allowed = switch (pending.kind) {
+      FrontFaceAttachmentKind.image => cfg.enableImages,
+      FrontFaceAttachmentKind.audio => cfg.enableAudio,
+      FrontFaceAttachmentKind.video => cfg.enableVideo,
+      FrontFaceAttachmentKind.location => false,
+    };
+    if (!allowed) return;
+
+    stopTyping();
+    _isSending = true;
+    _error = null;
+    _notify();
+
+    try {
+      final uploaded = await uploader(pending);
+      final payload = FrontFaceAttachmentPayload(
+        kind: pending.kind,
+        url: uploaded.url,
+        label: uploaded.fileName,
+      );
+      final content = payload.toMessageContent(_strings);
+      _appendMessage(
+        FrontFaceChatMessage.local(
+          content: content,
+          senderType: FrontFaceSenderType.customer,
+          metadata: FrontFaceMessageMetadata(payload.toMetadata()),
+        ),
+      );
+      _notify();
+      await _deliverMessage(content);
+    } on FrontFaceApiException catch (e) {
+      if (_isSessionStale(e)) {
+        await _recoverStaleSession();
+      } else {
+        _error = e.message;
+      }
+    } catch (_) {
+      _error = _strings.attachmentUploadFailed;
     } finally {
       _isSending = false;
       _notify();
