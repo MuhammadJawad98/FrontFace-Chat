@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontface_chat/frontface_chat.dart';
 import 'package:frontface_chat/src/services/frontface_api_service.dart';
@@ -1080,5 +1082,90 @@ void main() {
         );
       },
     );
+  });
+
+  group('attachments API', () {
+    test('sendLocationAttachment posts location object', () async {
+      final config = FrontFaceChatConfig(
+        projectId: testConfig.projectId,
+        publishableKey: testConfig.publishableKey,
+        requireLeadCaptureBeforeChat: false,
+        attachments: const FrontFaceAttachmentsConfig(
+          enableLocation: true,
+          googleMapsApiKey: 'AIza-test',
+        ),
+      );
+      final fake = FakeApiManager(config);
+      final provider = _buildProvider(fake, config: config);
+      await provider.initialize();
+
+      await provider.sendLocationAttachment(
+        const FrontFaceAttachmentPayload(
+          kind: FrontFaceAttachmentKind.location,
+          latitude: 24.7,
+          longitude: 46.6,
+          accuracyMeters: 8,
+          label: 'Riyadh',
+        ),
+      );
+
+      final msgCall = fake.calls.lastWhere(
+        (c) => c.path.contains('/api/chat/message'),
+      );
+      final location = msgCall.body?['location'] as Map<String, dynamic>?;
+      expect(location?['latitude'], 24.7);
+      expect(location?['longitude'], 46.6);
+      expect(location?['accuracy_m'], 8);
+      expect(location?['label'], 'Riyadh');
+      expect(msgCall.body?['message'], '');
+      final customer = provider.messages.lastWhere(
+        (m) => m.senderType == FrontFaceSenderType.customer,
+      );
+      expect(customer.parts, isNotEmpty);
+      expect(customer.parts.first.type, FrontFaceMessagePartType.location);
+    });
+
+    test('sendMediaAttachment reserves, PUTs, then sends parts', () async {
+      final config = FrontFaceChatConfig(
+        projectId: testConfig.projectId,
+        publishableKey: testConfig.publishableKey,
+        requireLeadCaptureBeforeChat: false,
+        attachments: const FrontFaceAttachmentsConfig(enableImages: true),
+      );
+      final fake = FakeApiManager(config);
+      final provider = _buildProvider(fake, config: config);
+      await provider.initialize();
+
+      final temp = await File(
+        '${Directory.systemTemp.path}/ff_test_${DateTime.now().microsecondsSinceEpoch}.jpg',
+      ).create();
+      await temp.writeAsBytes(List<int>.filled(64, 1));
+      addTearDown(() => temp.deleteSync());
+
+      await provider.sendMediaAttachment(
+        FrontFacePendingAttachment(
+          kind: FrontFaceAttachmentKind.image,
+          path: temp.path,
+          fileName: 'meal.jpg',
+          mimeType: 'image/jpeg',
+          byteLength: 64,
+        ),
+      );
+
+      expect(
+        fake.calls.any((c) => c.path.contains('/api/media/uploads')),
+        isTrue,
+      );
+      expect(fake.putCalls, hasLength(1));
+      expect(fake.putCalls.single.contentType, 'image/jpeg');
+      expect(fake.putCalls.single.byteLength, 64);
+
+      final msgCall = fake.calls.lastWhere(
+        (c) => c.path.contains('/api/chat/message'),
+      );
+      final parts = msgCall.body?['parts'] as List?;
+      expect(parts, isNotEmpty);
+      expect(parts!.first['mediaAssetId'], 'asset_1');
+    });
   });
 }

@@ -10,6 +10,7 @@ import '../../config/frontface_chat_strings.dart';
 import '../../config/frontface_chat_theme.dart';
 import '../../services/frontface_permission_gate.dart';
 import 'frontface_location_picker.dart';
+import 'frontface_voice_recorder.dart';
 
 /// Bottom sheet listing enabled attachment actions.
 class FrontFaceAttachmentSheet {
@@ -20,7 +21,8 @@ class FrontFaceAttachmentSheet {
     required FrontFaceAttachmentsConfig attachments,
     required FrontFaceChatTheme theme,
     required FrontFaceChatStrings strings,
-    required Future<void> Function(FrontFaceAttachmentPayload payload) onLocation,
+    required Future<void> Function(FrontFaceAttachmentPayload payload)
+        onLocation,
     required Future<void> Function(FrontFacePendingAttachment pending) onMedia,
   }) async {
     if (!attachments.anyEnabled) return;
@@ -86,39 +88,21 @@ class FrontFaceAttachmentSheet {
                     },
                   ),
                 ],
-                if (attachments.enableVideo) ...[
+                if (attachments.enableAudio) ...[
                   ListTile(
-                    leading: Icon(Icons.videocam_outlined,
-                        color: theme.primaryColor),
-                    title: Text(strings.attachVideo),
+                    leading: Icon(Icons.mic_none, color: theme.primaryColor),
+                    title: Text(strings.recordVoice),
                     onTap: () async {
                       Navigator.pop(sheetContext);
-                      await _pickVideo(
+                      await _recordVoice(
                         context: context,
-                        source: ImageSource.gallery,
                         attachments: attachments,
+                        theme: theme,
                         strings: strings,
                         onMedia: onMedia,
                       );
                     },
                   ),
-                  ListTile(
-                    leading: Icon(Icons.video_camera_back_outlined,
-                        color: theme.primaryColor),
-                    title: Text(strings.recordVideo),
-                    onTap: () async {
-                      Navigator.pop(sheetContext);
-                      await _pickVideo(
-                        context: context,
-                        source: ImageSource.camera,
-                        attachments: attachments,
-                        strings: strings,
-                        onMedia: onMedia,
-                      );
-                    },
-                  ),
-                ],
-                if (attachments.enableAudio)
                   ListTile(
                     leading: Icon(Icons.audiotrack_outlined,
                         color: theme.primaryColor),
@@ -133,6 +117,7 @@ class FrontFaceAttachmentSheet {
                       );
                     },
                   ),
+                ],
                 const SizedBox(height: 4),
               ],
             ),
@@ -147,7 +132,8 @@ class FrontFaceAttachmentSheet {
     required FrontFaceAttachmentsConfig attachments,
     required FrontFaceChatTheme theme,
     required FrontFaceChatStrings strings,
-    required Future<void> Function(FrontFaceAttachmentPayload payload) onLocation,
+    required Future<void> Function(FrontFaceAttachmentPayload payload)
+        onLocation,
   }) async {
     final key = attachments.googleMapsApiKey?.trim();
     if (key == null || key.isEmpty) return;
@@ -213,55 +199,21 @@ class FrontFaceAttachmentSheet {
     );
   }
 
-  static Future<void> _pickVideo({
+  static Future<void> _recordVoice({
     required BuildContext context,
-    required ImageSource source,
     required FrontFaceAttachmentsConfig attachments,
+    required FrontFaceChatTheme theme,
     required FrontFaceChatStrings strings,
     required Future<void> Function(FrontFacePendingAttachment pending) onMedia,
   }) async {
-    final gate = const FrontFacePermissionGate();
-    final permission =
-        source == ImageSource.camera ? Permission.camera : Permission.photos;
-    final ok = await gate.ensure(
-      context: context,
-      permission: permission,
+    if (!context.mounted) return;
+    final pending = await FrontFaceVoiceRecorderSheet.show(
+      context,
+      theme: theme,
       strings: strings,
-      rationaleTitle: source == ImageSource.camera
-          ? strings.permissionCameraTitle
-          : strings.permissionVideosTitle,
-      rationaleBody: source == ImageSource.camera
-          ? strings.permissionCameraBody
-          : strings.permissionVideosBody,
+      maxAudioBytes: attachments.maxAudioBytes,
     );
-    if (!ok || !context.mounted) return;
-
-    final picker = ImagePicker();
-    final file = await picker.pickVideo(
-      source: source,
-      maxDuration: const Duration(minutes: 3),
-    );
-    if (file == null) return;
-
-    final length = await File(file.path).length();
-    if (length > attachments.maxVideoBytes) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(strings.attachmentTooLarge)),
-        );
-      }
-      return;
-    }
-
-    await onMedia(
-      FrontFacePendingAttachment(
-        kind: FrontFaceAttachmentKind.video,
-        path: file.path,
-        fileName: file.name,
-        mimeType: file.mimeType ?? 'video/mp4',
-        byteLength: length,
-      ),
-    );
+    if (pending != null) await onMedia(pending);
   }
 
   static Future<void> _pickAudio({
@@ -270,10 +222,9 @@ class FrontFaceAttachmentSheet {
     required FrontFaceChatStrings strings,
     required Future<void> Function(FrontFacePendingAttachment pending) onMedia,
   }) async {
-    // File picker uses the system document UI — no mic permission needed.
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['mp3', 'm4a', 'wav', 'aac', 'ogg'],
+      allowedExtensions: const ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'webm'],
       withData: false,
     );
     final file = result?.files.single;

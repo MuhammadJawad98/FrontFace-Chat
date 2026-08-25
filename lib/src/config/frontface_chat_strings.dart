@@ -73,9 +73,14 @@ class FrontFaceChatStrings {
   final String attachVideo;
   final String recordVideo;
   final String attachAudio;
+  final String recordVoice;
+  final String startRecording;
+  final String stopRecording;
   final String imageAttachment;
   final String audioAttachment;
   final String videoAttachment;
+  final String transcriptPending;
+  final String transcriptFailed;
   final String attachmentTooLarge;
   final String attachmentUnavailable;
   final String attachmentUploadFailed;
@@ -90,6 +95,8 @@ class FrontFaceChatStrings {
   final String permissionPhotosBody;
   final String permissionVideosTitle;
   final String permissionVideosBody;
+  final String permissionMicTitle;
+  final String permissionMicBody;
   final String permissionContinue;
   final String permissionNotNow;
   final String permissionOpenSettingsBody;
@@ -164,9 +171,14 @@ class FrontFaceChatStrings {
     this.attachVideo = 'Video library',
     this.recordVideo = 'Record video',
     this.attachAudio = 'Audio file',
+    this.recordVoice = 'Record voice note',
+    this.startRecording = 'Start recording',
+    this.stopRecording = 'Send voice note',
     this.imageAttachment = 'Image',
-    this.audioAttachment = 'Audio attachment',
+    this.audioAttachment = 'Voice note',
     this.videoAttachment = 'Video attachment',
+    this.transcriptPending = 'Transcribing…',
+    this.transcriptFailed = 'Transcript unavailable',
     this.attachmentTooLarge = 'That file is too large to send.',
     this.attachmentUnavailable = 'Attachment unavailable',
     this.attachmentUploadFailed = 'Could not upload attachment. Try again.',
@@ -180,13 +192,16 @@ class FrontFaceChatStrings {
         'FrontFace needs your location so you can share it with support.',
     this.permissionCameraTitle = 'Camera access',
     this.permissionCameraBody =
-        'FrontFace needs the camera to take a photo or video for support.',
+        'FrontFace needs the camera to take a photo for support.',
     this.permissionPhotosTitle = 'Photo access',
     this.permissionPhotosBody =
         'FrontFace needs photo access so you can attach an image.',
     this.permissionVideosTitle = 'Video access',
     this.permissionVideosBody =
         'FrontFace needs video access so you can attach a clip.',
+    this.permissionMicTitle = 'Microphone access',
+    this.permissionMicBody =
+        'FrontFace needs the microphone to record a voice note for support.',
     this.permissionContinue = 'Continue',
     this.permissionNotNow = 'Not now',
     this.permissionOpenSettingsBody =
@@ -263,9 +278,14 @@ class FrontFaceChatStrings {
     String? attachVideo,
     String? recordVideo,
     String? attachAudio,
+    String? recordVoice,
+    String? startRecording,
+    String? stopRecording,
     String? imageAttachment,
     String? audioAttachment,
     String? videoAttachment,
+    String? transcriptPending,
+    String? transcriptFailed,
     String? attachmentTooLarge,
     String? attachmentUnavailable,
     String? attachmentUploadFailed,
@@ -280,6 +300,8 @@ class FrontFaceChatStrings {
     String? permissionPhotosBody,
     String? permissionVideosTitle,
     String? permissionVideosBody,
+    String? permissionMicTitle,
+    String? permissionMicBody,
     String? permissionContinue,
     String? permissionNotNow,
     String? permissionOpenSettingsBody,
@@ -341,9 +363,14 @@ class FrontFaceChatStrings {
       attachVideo: attachVideo ?? this.attachVideo,
       recordVideo: recordVideo ?? this.recordVideo,
       attachAudio: attachAudio ?? this.attachAudio,
+      recordVoice: recordVoice ?? this.recordVoice,
+      startRecording: startRecording ?? this.startRecording,
+      stopRecording: stopRecording ?? this.stopRecording,
       imageAttachment: imageAttachment ?? this.imageAttachment,
       audioAttachment: audioAttachment ?? this.audioAttachment,
       videoAttachment: videoAttachment ?? this.videoAttachment,
+      transcriptPending: transcriptPending ?? this.transcriptPending,
+      transcriptFailed: transcriptFailed ?? this.transcriptFailed,
       attachmentTooLarge: attachmentTooLarge ?? this.attachmentTooLarge,
       attachmentUnavailable:
           attachmentUnavailable ?? this.attachmentUnavailable,
@@ -367,6 +394,8 @@ class FrontFaceChatStrings {
       permissionVideosTitle:
           permissionVideosTitle ?? this.permissionVideosTitle,
       permissionVideosBody: permissionVideosBody ?? this.permissionVideosBody,
+      permissionMicTitle: permissionMicTitle ?? this.permissionMicTitle,
+      permissionMicBody: permissionMicBody ?? this.permissionMicBody,
       permissionContinue: permissionContinue ?? this.permissionContinue,
       permissionNotNow: permissionNotNow ?? this.permissionNotNow,
       permissionOpenSettingsBody:

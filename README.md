@@ -10,7 +10,7 @@ Native Flutter SDK for [FrontFace](https://frontface.app) AI chat with optional 
 - Support tickets (structured actions + ticket cards), CSAT ratings, offline contact form
 - Channel launcher buttons (WhatsApp, email, phone, etc.) from dashboard config
 - Customer identity verification via backend-signed JWT (`identify` / `resetUser`)
-- Optional attachments: location (Google Maps), images, audio, video (config-gated)
+- Optional attachments: location (Google Maps), images, voice notes (config-gated; uploaded via FrontFace signed URLs)
 - Session restore across app restarts (session id + session token persisted automatically)
 - Customizable theme and localized strings
 - One-line `FrontFaceChat.open()` integration
@@ -27,7 +27,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.4.1
+  frontface_chat: ^1.5.0
 ```
 
 For local development (this repo lives next to your app):
@@ -165,7 +165,10 @@ await FrontFaceChat.resetUser(provider);
 
 ### Attachments (optional)
 
-All attachment types are **off by default**. Enable only what you need:
+All attachment types are **off by default**. Enable only what you need.
+Images and voice notes upload through FrontFace (`POST /api/media/uploads` →
+signed `PUT` → `parts` on `POST /api/chat/message`) — **no host uploader**.
+Location is sent as a structured `location` object (not a Maps URL in text).
 
 ```dart
 final config = FrontFaceChatConfig(
@@ -175,25 +178,21 @@ final config = FrontFaceChatConfig(
     enableLocation: true,
     enableImages: true,
     enableAudio: true,
-    enableVideo: true,
+    // Required when enableLocation is true (map picker + static previews).
     googleMapsApiKey: 'YOUR_GOOGLE_MAPS_API_KEY',
-    // Required when any media type is enabled — FrontFace chat API does not
-    // accept raw file uploads yet. Upload to your CDN / storage and return HTTPS URL.
-    uploader: (pending) async {
-      final url = await myBackend.uploadFile(File(pending.path));
-      return FrontFaceUploadedAttachment(url: url, fileName: pending.fileName);
-    },
   ),
 );
 ```
 
+See `SEND_LOCATION_GUIDE.md`, `SEND_IMAGE_GUIDE.md`, and `SEND_VOICE_GUIDE.md`.
+
 **Native setup (host app):**
 
-- **Android** `AndroidManifest.xml`: location / camera / media permissions, and
+- **Android** `AndroidManifest.xml`: location / camera / media / mic permissions, and
   `com.google.android.geo.API_KEY` meta-data with the same Maps key.
 - **iOS** `Info.plist`: `NSLocationWhenInUseUsageDescription`,
   `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`,
-  `NSMicrophoneUsageDescription` (if recording), and set the Maps key via
+  `NSMicrophoneUsageDescription`, and set the Maps key via
   `GMSServices.provideAPIKey` in `AppDelegate`.
 
 Permissions are requested only when the user taps an attachment action, with an

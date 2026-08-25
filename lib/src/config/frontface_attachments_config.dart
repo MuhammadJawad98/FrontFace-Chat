@@ -1,64 +1,47 @@
 import 'frontface_chat_strings.dart';
 
-/// Optional chat attachments (location, images, audio, video).
+/// Optional chat attachments (location, images, voice notes).
 ///
-/// All features default to **off**. Enable only what your host app needs, and
-/// provide [uploader] when any media type is enabled (FrontFace's public chat
-/// API does not yet accept raw file uploads — the host uploads the file and
-/// returns a public HTTPS URL that is sent as the message body).
+/// All features default to **off**. Image and voice upload go through FrontFace
+/// signed URLs (`POST /api/media/uploads` → `PUT` bytes → `parts` on
+/// `POST /api/chat/message`) — no host uploader is required.
 ///
 /// Location sharing needs [googleMapsApiKey] for the in-chat map picker, plus
-/// the same key in the host app's Android/iOS native config (see README).
+/// the same key in the host Android/iOS native config (see README).
 class FrontFaceAttachmentsConfig {
   /// Show "Share location" and open an in-app Google Map picker.
   final bool enableLocation;
 
-  /// Allow picking / capturing images.
+  /// Allow picking / capturing images (JPEG/PNG/WebP/GIF, max 10 MB).
   final bool enableImages;
 
-  /// Allow picking audio files.
+  /// Allow recording / attaching voice notes (max 25 MB).
   final bool enableAudio;
 
-  /// Allow picking / capturing videos.
-  final bool enableVideo;
-
-  /// Google Maps / Places API key used by the Flutter map picker and static
-  /// map previews. Also configure this key in AndroidManifest / AppDelegate.
+  /// Google Maps API key for the map picker + static map previews.
   final String? googleMapsApiKey;
 
-  /// Uploads a local media file and returns a public HTTPS URL.
-  ///
-  /// Required when [enableImages], [enableAudio], or [enableVideo] is true.
-  final FrontFaceAttachmentUploader? uploader;
-
-  /// Max image size in bytes (default 10 MB).
+  /// Max image size in bytes (API cap: 10 MB).
   final int maxImageBytes;
 
-  /// Max audio size in bytes (default 15 MB).
+  /// Max audio size in bytes (API cap: 25 MB).
   final int maxAudioBytes;
-
-  /// Max video size in bytes (default 50 MB).
-  final int maxVideoBytes;
 
   const FrontFaceAttachmentsConfig({
     this.enableLocation = false,
     this.enableImages = false,
     this.enableAudio = false,
-    this.enableVideo = false,
     this.googleMapsApiKey,
-    this.uploader,
     this.maxImageBytes = 10 * 1024 * 1024,
-    this.maxAudioBytes = 15 * 1024 * 1024,
-    this.maxVideoBytes = 50 * 1024 * 1024,
+    this.maxAudioBytes = 25 * 1024 * 1024,
   });
 
   /// Nothing enabled — attach button hidden.
   static const disabled = FrontFaceAttachmentsConfig();
 
-  bool get anyEnabled =>
-      enableLocation || enableImages || enableAudio || enableVideo;
+  bool get anyEnabled => enableLocation || enableImages || enableAudio;
 
-  bool get mediaEnabled => enableImages || enableAudio || enableVideo;
+  bool get mediaEnabled => enableImages || enableAudio;
 
   void validate() {
     if (enableLocation &&
@@ -68,19 +51,16 @@ class FrontFaceAttachmentsConfig {
         'enableLocation is true.',
       );
     }
-    if (mediaEnabled && uploader == null) {
-      throw ArgumentError(
-        'FrontFaceAttachmentsConfig.uploader is required when images, audio, '
-        'or video attachments are enabled (host must upload and return a URL).',
-      );
-    }
   }
 }
 
-/// Kind of pending / uploaded attachment.
-enum FrontFaceAttachmentKind { location, image, audio, video }
+/// Kind of pending attachment.
+enum FrontFaceAttachmentKind { location, image, audio }
 
-/// Local file waiting to be uploaded (or already chosen).
+/// Audio transcript pipeline status from `MessagePart.processingStatus`.
+enum FrontFaceMediaProcessingStatus { pending, ready, failed }
+
+/// Local file waiting to be uploaded to FrontFace storage.
 class FrontFacePendingAttachment {
   final FrontFaceAttachmentKind kind;
   final String path;
@@ -97,30 +77,43 @@ class FrontFacePendingAttachment {
   });
 }
 
-/// Result of a successful host-side upload.
-class FrontFaceUploadedAttachment {
-  final String url;
-  final String? fileName;
-  final String? mimeType;
+/// Location payload for `POST /api/chat/message` (`location` field).
+class FrontFaceLocationData {
+  final double latitude;
+  final double longitude;
+  final double? accuracyMeters;
+  final String? label;
+  final DateTime? capturedAt;
 
-  const FrontFaceUploadedAttachment({
-    required this.url,
-    this.fileName,
-    this.mimeType,
+  const FrontFaceLocationData({
+    required this.latitude,
+    required this.longitude,
+    this.accuracyMeters,
+    this.label,
+    this.capturedAt,
   });
+
+  Map<String, dynamic> toJson() => {
+        'latitude': latitude,
+        'longitude': longitude,
+        if (accuracyMeters != null) 'accuracy_m': accuracyMeters,
+        if (label != null && label!.trim().isNotEmpty) 'label': label!.trim(),
+        if (capturedAt != null)
+          'captured_at': capturedAt!.toUtc().toIso8601String(),
+      };
 }
 
-/// Host-provided upload hook. Must return a publicly reachable HTTPS URL.
-typedef FrontFaceAttachmentUploader = Future<FrontFaceUploadedAttachment>
-    Function(FrontFacePendingAttachment attachment);
-
-/// Parsed attachment hints embedded in message content / metadata for UI.
+/// UI helper for local provisional bubbles / legacy text parse.
 class FrontFaceAttachmentPayload {
   final FrontFaceAttachmentKind kind;
   final String? url;
   final double? latitude;
   final double? longitude;
   final String? label;
+  final double? accuracyMeters;
+  final DateTime? capturedAt;
+  final String? derivedText;
+  final FrontFaceMediaProcessingStatus? processingStatus;
 
   const FrontFaceAttachmentPayload({
     required this.kind,
@@ -128,31 +121,43 @@ class FrontFaceAttachmentPayload {
     this.latitude,
     this.longitude,
     this.label,
+    this.accuracyMeters,
+    this.capturedAt,
+    this.derivedText,
+    this.processingStatus,
   });
 
-  /// Builds the plain-text body sent to `POST /api/chat/message`.
-  ///
-  /// Pass [strings] so location/media labels match the host app language.
+  FrontFaceLocationData? toLocationData() {
+    if (kind != FrontFaceAttachmentKind.location) return null;
+    if (latitude == null || longitude == null) return null;
+    return FrontFaceLocationData(
+      latitude: latitude!,
+      longitude: longitude!,
+      accuracyMeters: accuracyMeters,
+      label: label,
+      capturedAt: capturedAt ?? DateTime.now().toUtc(),
+    );
+  }
+
+  /// Display fallback when [FrontFaceMessagePart]s are absent.
   String toMessageContent([FrontFaceChatStrings? strings]) {
     final s = strings ?? const FrontFaceChatStrings();
     switch (kind) {
       case FrontFaceAttachmentKind.location:
         final lat = latitude ?? 0;
         final lng = longitude ?? 0;
-        final mapsUrl = 'https://maps.google.com/?q=$lat,$lng';
         final name = (label != null && label!.trim().isNotEmpty)
             ? label!.trim()
             : s.sharedLocation;
-        return '📍 $name\n$mapsUrl';
+        return '📍 $name\nhttps://maps.google.com/?q=$lat,$lng';
       case FrontFaceAttachmentKind.image:
-        return '🖼️ ${s.imageAttachment}\n${url ?? ''}';
+        return '🖼️ ${s.imageAttachment}';
       case FrontFaceAttachmentKind.audio:
-        return '🎵 ${s.audioAttachment}\n${url ?? ''}';
-      case FrontFaceAttachmentKind.video:
-        return '🎬 ${s.videoAttachment}\n${url ?? ''}';
+        return '🎵 ${s.audioAttachment}';
     }
   }
 
+  /// Provisional metadata for optimistic local bubbles.
   Map<String, dynamic> toMetadata() => {
         'attachment': {
           'type': kind.name,
@@ -160,10 +165,13 @@ class FrontFaceAttachmentPayload {
           if (latitude != null) 'latitude': latitude,
           if (longitude != null) 'longitude': longitude,
           if (label != null) 'label': label,
+          if (accuracyMeters != null) 'accuracy_m': accuracyMeters,
+          if (capturedAt != null)
+            'captured_at': capturedAt!.toUtc().toIso8601String(),
         },
       };
 
-  /// Best-effort parse from message content + optional metadata.
+  /// Best-effort parse from plain message content + optional metadata.
   static FrontFaceAttachmentPayload? tryParse({
     required String content,
     Map<String, dynamic>? metadata,
@@ -185,6 +193,7 @@ class FrontFaceAttachmentPayload {
           latitude: (raw['latitude'] as num?)?.toDouble(),
           longitude: (raw['longitude'] as num?)?.toDouble(),
           label: raw['label']?.toString(),
+          accuracyMeters: (raw['accuracy_m'] as num?)?.toDouble(),
         );
       }
     }
@@ -202,34 +211,28 @@ class FrontFaceAttachmentPayload {
       );
     }
 
-    final urlMatch = RegExp(r'https?://\S+').firstMatch(content);
-    final url = urlMatch?.group(0);
-    if (url == null) return null;
-
     if (content.contains('🖼️') ||
-        RegExp(r'\.(png|jpe?g|gif|webp)(\?|$)', caseSensitive: false)
-            .hasMatch(url)) {
+        RegExp(r'https?://\S+\.(jpe?g|png|gif|webp)', caseSensitive: false)
+            .hasMatch(content)) {
+      final urlMatch =
+          RegExp(r'https?://\S+').firstMatch(content)?.group(0);
       return FrontFaceAttachmentPayload(
         kind: FrontFaceAttachmentKind.image,
-        url: url,
+        url: urlMatch,
       );
     }
+
     if (content.contains('🎵') ||
-        RegExp(r'\.(mp3|m4a|wav|aac|ogg)(\?|$)', caseSensitive: false)
-            .hasMatch(url)) {
+        RegExp(r'https?://\S+\.(mp3|m4a|wav|ogg|webm)', caseSensitive: false)
+            .hasMatch(content)) {
+      final urlMatch =
+          RegExp(r'https?://\S+').firstMatch(content)?.group(0);
       return FrontFaceAttachmentPayload(
         kind: FrontFaceAttachmentKind.audio,
-        url: url,
+        url: urlMatch,
       );
     }
-    if (content.contains('🎬') ||
-        RegExp(r'\.(mp4|mov|webm|m4v)(\?|$)', caseSensitive: false)
-            .hasMatch(url)) {
-      return FrontFaceAttachmentPayload(
-        kind: FrontFaceAttachmentKind.video,
-        url: url,
-      );
-    }
+
     return null;
   }
 }

@@ -1,3 +1,11 @@
+## 1.5.0
+
+* Breaking: attachments use the official FrontFace media APIs — remove host `uploader` / `FrontFaceUploadedAttachment`. Image & voice: reserve → signed PUT → `parts: [{ mediaAssetId }]`. Location: `location` object on `POST /api/chat/message`.
+* Breaking: video attachments removed (not in the chat API). Use images or voice notes instead.
+* Add: parse/render `MessagePart` (`location` / `image` / `audio`) on history reload, including voice transcript (`derivedText` / `processingStatus`).
+* Add: in-chat voice note recorder (`record` + mic permission).
+* Docs: align with `SEND_*_GUIDE.md` / `openapi.yaml` / `INTEGRATION_GUIDE.md` §5.3–5.5.
+
 ## 1.4.1
 
 * Fix: widen `geolocator` to `>=13.0.4 <15.0.0` so host apps on geolocator 14.x (e.g. Freshhouse) can resolve dependencies with `frontface_chat ^1.4.0`.

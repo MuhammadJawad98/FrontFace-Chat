@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -378,14 +379,17 @@ class FrontFaceChatProvider extends ChangeNotifier
     }
   }
 
-  /// Sends a location pin (maps URL) as a chat message.
+  /// Sends a location pin via `POST /api/chat/message` `location` object.
   Future<void> sendLocationAttachment(FrontFaceAttachmentPayload location) async {
     if (location.kind != FrontFaceAttachmentKind.location) return;
     if (_visitorId == null || _isSending || !canChat) return;
     if (!_chatConfig.attachments.enableLocation) return;
 
+    final data = location.toLocationData();
+    if (data == null) return;
+
     final content = location.toMessageContent(_strings);
-    final meta = FrontFaceMessageMetadata(location.toMetadata());
+    final part = FrontFaceMessagePart.localLocation(data);
 
     stopTyping();
     _isSending = true;
@@ -394,13 +398,17 @@ class FrontFaceChatProvider extends ChangeNotifier
       FrontFaceChatMessage.local(
         content: content,
         senderType: FrontFaceSenderType.customer,
-        metadata: meta,
+        metadata: FrontFaceMessageMetadata(location.toMetadata()),
+        parts: [part],
       ),
     );
     _notify();
 
     try {
-      await _deliverMessage(content);
+      await _deliverMessage(
+        '',
+        location: data.toJson(),
+      );
     } on FrontFaceApiException catch (e) {
       if (_isSessionStale(e)) {
         await _recoverStaleSession();
@@ -415,47 +423,91 @@ class FrontFaceChatProvider extends ChangeNotifier
     }
   }
 
-  /// Uploads media via the host [FrontFaceAttachmentsConfig.uploader], then
-  /// sends the resulting HTTPS URL as a chat message.
+  /// Uploads image/audio via FrontFace signed URL, then sends `parts`.
   Future<void> sendMediaAttachment(FrontFacePendingAttachment pending) async {
     if (_visitorId == null || _isSending || !canChat) return;
     final cfg = _chatConfig.attachments;
-    final uploader = cfg.uploader;
-    if (uploader == null) {
-      _error = _strings.attachmentUploadFailed;
-      _notify();
-      return;
-    }
     final allowed = switch (pending.kind) {
       FrontFaceAttachmentKind.image => cfg.enableImages,
       FrontFaceAttachmentKind.audio => cfg.enableAudio,
-      FrontFaceAttachmentKind.video => cfg.enableVideo,
       FrontFaceAttachmentKind.location => false,
     };
     if (!allowed) return;
 
+    final mime = _normalizeMime(pending);
+    if (mime == null) {
+      _error = _strings.attachmentUploadFailed;
+      _notify();
+      return;
+    }
+
     stopTyping();
     _isSending = true;
     _error = null;
+
+    final provisional = switch (pending.kind) {
+      FrontFaceAttachmentKind.image => FrontFaceMessagePart.localImage(
+          localPath: pending.path,
+        ),
+      FrontFaceAttachmentKind.audio => FrontFaceMessagePart.localAudio(
+          localPath: pending.path,
+        ),
+      FrontFaceAttachmentKind.location => null,
+    };
+    final placeholder = FrontFaceAttachmentPayload(
+      kind: pending.kind,
+      url: pending.path,
+      label: pending.fileName,
+    );
+    _appendMessage(
+      FrontFaceChatMessage.local(
+        content: placeholder.toMessageContent(_strings),
+        senderType: FrontFaceSenderType.customer,
+        metadata: FrontFaceMessageMetadata(placeholder.toMetadata()),
+        parts: provisional == null ? const [] : [provisional],
+      ),
+    );
     _notify();
 
     try {
-      final uploaded = await uploader(pending);
-      final payload = FrontFaceAttachmentPayload(
-        kind: pending.kind,
-        url: uploaded.url,
-        label: uploaded.fileName,
+      await _ensureConversationReady();
+      if (_sessionId == null) {
+        throw const FrontFaceApiException(
+          code: 'NO_CONVERSATION',
+          message: 'Could not start a conversation for media upload.',
+        );
+      }
+
+      final bytes = await File(pending.path).readAsBytes();
+      final maxBytes = pending.kind == FrontFaceAttachmentKind.image
+          ? cfg.maxImageBytes
+          : cfg.maxAudioBytes;
+      if (bytes.length > maxBytes) {
+        throw FrontFaceApiException(
+          code: 'FILE_TOO_LARGE',
+          message: _strings.attachmentTooLarge,
+        );
+      }
+
+      final reservation = await _api.reserveMediaUpload(
+        visitorId: _visitorId!,
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken,
+        mime: mime,
+        byteSize: bytes.length,
+        filename: pending.fileName,
       );
-      final content = payload.toMessageContent(_strings);
-      _appendMessage(
-        FrontFaceChatMessage.local(
-          content: content,
-          senderType: FrontFaceSenderType.customer,
-          metadata: FrontFaceMessageMetadata(payload.toMetadata()),
-        ),
+      await _api.uploadMediaBytes(
+        uploadUrl: reservation.uploadUrl,
+        bytes: bytes,
+        contentType: mime,
       );
-      _notify();
-      await _deliverMessage(content);
+      await _deliverMessage(
+        '',
+        parts: [
+          {'mediaAssetId': reservation.assetId},
+        ],
+      );
     } on FrontFaceApiException catch (e) {
       if (_isSessionStale(e)) {
         await _recoverStaleSession();
@@ -470,15 +522,75 @@ class FrontFaceChatProvider extends ChangeNotifier
     }
   }
 
+  Future<void> _ensureConversationReady() async {
+    if (_sessionId != null) return;
+    final ensured = await _api.ensureConversation(visitorId: _visitorId!);
+    await _applySessionFromResponse(ensured);
+  }
+
+  String? _normalizeMime(FrontFacePendingAttachment pending) {
+    final raw = (pending.mimeType ?? '').toLowerCase().trim();
+    if (pending.kind == FrontFaceAttachmentKind.image) {
+      const allowed = {
+        'image/jpeg',
+        'image/jpg',
+        'image/png',
+        'image/webp',
+        'image/gif',
+      };
+      if (allowed.contains(raw)) {
+        return raw == 'image/jpg' ? 'image/jpeg' : raw;
+      }
+      final name = (pending.fileName ?? pending.path).toLowerCase();
+      if (name.endsWith('.png')) return 'image/png';
+      if (name.endsWith('.webp')) return 'image/webp';
+      if (name.endsWith('.gif')) return 'image/gif';
+      return 'image/jpeg';
+    }
+    if (pending.kind == FrontFaceAttachmentKind.audio) {
+      const allowed = {
+        'audio/webm',
+        'audio/mp4',
+        'audio/mpeg',
+        'audio/ogg',
+        'audio/wav',
+        'audio/x-wav',
+        'audio/aac',
+        'audio/m4a',
+      };
+      if (allowed.contains(raw)) {
+        if (raw == 'audio/x-wav') return 'audio/wav';
+        if (raw == 'audio/aac' || raw == 'audio/m4a') return 'audio/mp4';
+        return raw;
+      }
+      final name = (pending.fileName ?? pending.path).toLowerCase();
+      if (name.endsWith('.webm')) return 'audio/webm';
+      if (name.endsWith('.m4a') || name.endsWith('.aac') || name.endsWith('.mp4')) {
+        return 'audio/mp4';
+      }
+      if (name.endsWith('.ogg')) return 'audio/ogg';
+      if (name.endsWith('.wav')) return 'audio/wav';
+      if (name.endsWith('.mp3')) return 'audio/mpeg';
+      return 'audio/mp4';
+    }
+    return null;
+  }
+
   /// Posts [trimmed] and applies the assistant reply / handoff side-effects.
   /// Does not append the customer bubble — callers own that.
-  Future<void> _deliverMessage(String trimmed) async {
+  Future<void> _deliverMessage(
+    String trimmed, {
+    Map<String, dynamic>? location,
+    List<Map<String, String>>? parts,
+  }) async {
     final response = await _api.sendMessage(
       visitorId: _visitorId!,
       message: trimmed,
       sessionId: _sessionId,
       sessionToken: _sessionToken,
       conversationHistory: _buildConversationHistory(),
+      location: location,
+      parts: parts,
     );
 
     await _applySessionFromResponse(response);

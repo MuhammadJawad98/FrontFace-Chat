@@ -51,6 +51,7 @@ class _FrontFaceLocationPickerScreenState
 
   GoogleMapController? _controller;
   LatLng _pin = _fallback;
+  double? _accuracyMeters;
   bool _loading = true;
   String? _error;
 
@@ -97,6 +98,7 @@ class _FrontFaceLocationPickerScreenState
       if (!mounted) return;
       setState(() {
         _pin = LatLng(pos.latitude, pos.longitude);
+        _accuracyMeters = pos.accuracy;
         _loading = false;
       });
       await _controller?.animateCamera(CameraUpdate.newLatLngZoom(_pin, 16));
@@ -116,7 +118,9 @@ class _FrontFaceLocationPickerScreenState
         kind: FrontFaceAttachmentKind.location,
         latitude: _pin.latitude,
         longitude: _pin.longitude,
+        accuracyMeters: _accuracyMeters,
         label: widget.strings.sharedLocation,
+        capturedAt: DateTime.now().toUtc(),
         url:
             'https://maps.google.com/?q=${_pin.latitude},${_pin.longitude}',
       ),

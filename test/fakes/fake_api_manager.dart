@@ -17,6 +17,7 @@ class FakeApiManager extends FrontFaceApiManager {
   FakeApiManager(super.config);
 
   final List<RecordedCall> calls = [];
+  final List<PutCall> putCalls = [];
 
   /// Artificial delay applied to every call, so tests can observe transient
   /// loading states that would otherwise resolve within a single pump.
@@ -49,6 +50,15 @@ class FakeApiManager extends FrontFaceApiManager {
   /// Canned history returned by GET .../messages/public — set this to
   /// simulate hydrating a conversation with existing messages on reload.
   List<Map<String, dynamic>> messagesResponse = [];
+
+  Map<String, dynamic> mediaUploadResponse = {
+    'assetId': 'asset_1',
+    'uploadUrl': 'https://storage.example.com/upload/signed',
+    'token': 'upload_tok',
+    'path': 'media/asset_1',
+  };
+
+  bool putShouldFail = false;
 
   /// If set, any get/post call whose path contains this substring throws
   /// [forcedError] instead of returning a canned response — used to
@@ -106,6 +116,9 @@ class FakeApiManager extends FrontFaceApiManager {
     if (delay > Duration.zero) await Future.delayed(delay);
     calls.add(RecordedCall(path: path, sessionToken: sessionToken, body: body));
     _maybeThrow(path);
+    if (path.contains('/api/media/uploads')) {
+      return mediaUploadResponse;
+    }
     if (path.contains('/api/chat/message')) {
       return sendMessageResponder?.call(body) ??
           {'response': 'ok', 'sessionId': 'sess_1', 'sessionToken': 'tok_1'};
@@ -144,6 +157,37 @@ class FakeApiManager extends FrontFaceApiManager {
     }
     return {};
   }
+
+  @override
+  Future<void> putBytes(
+    String uploadUrl, {
+    required List<int> bytes,
+    required String contentType,
+  }) async {
+    if (delay > Duration.zero) await Future.delayed(delay);
+    putCalls.add(
+      PutCall(url: uploadUrl, byteLength: bytes.length, contentType: contentType),
+    );
+    if (putShouldFail) {
+      throw const FrontFaceApiException(
+        code: 'UPLOAD_FAILED',
+        message: 'Media upload failed',
+        statusCode: 500,
+      );
+    }
+  }
+}
+
+class PutCall {
+  final String url;
+  final int byteLength;
+  final String contentType;
+
+  PutCall({
+    required this.url,
+    required this.byteLength,
+    required this.contentType,
+  });
 }
 
 const testConfig = FrontFaceChatConfig(

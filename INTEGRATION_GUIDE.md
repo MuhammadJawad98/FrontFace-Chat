@@ -402,6 +402,30 @@ Note that a ticket committed this way is still recorded on the conversation: the
 action's fields are attached to the acknowledgement message, so a reloaded transcript can redraw
 the ticket card without re-fetching anything.
 
+### 5.3 Sending a location
+
+A message can carry an explicitly shared location — for example to change a delivery
+destination for a given day. Send a `location` object on the same `POST /api/chat/message`
+call; coordinates are bound into data connectors server-side (the AI chooses the day, never
+the pin), and the location is ephemeral (never saved to the customer profile). Full contract,
+payload shape, and UX/permission notes are in **[SEND_LOCATION_GUIDE.md](./SEND_LOCATION_GUIDE.md)**.
+
+### 5.4 Sending an image
+
+A message can carry one or more images. Upload each image directly to storage via a signed
+URL (`POST /api/media/uploads` → `PUT` the bytes), then send the message with
+`parts: [{ mediaAssetId }]`. The AI sees the actual image on that turn; the agent sees a
+zoomable thumbnail. Full three-step contract, size/type limits, and how to read images back
+are in **[SEND_IMAGE_GUIDE.md](./SEND_IMAGE_GUIDE.md)**.
+
+### 5.5 Sending a voice note
+
+A message can carry a voice note. Same three-step upload as an image (audio mime types, 25 MB
+cap), then `parts: [{ mediaAssetId }]`. The backend transcribes it (Arabic + English +
+code-switching) so the AI can answer, and the agent gets a player with the transcript. Full
+contract and how to read voice notes back (`type: "audio"`, `url`, `processingStatus`,
+`derivedText`, `duration_ms`) are in **[SEND_VOICE_GUIDE.md](./SEND_VOICE_GUIDE.md)**.
+
 ---
 
 ## 6. Live human handoff

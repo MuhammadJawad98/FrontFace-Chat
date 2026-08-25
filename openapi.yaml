@@ -1,0 +1,1250 @@
+openapi: 3.0.3
+info:
+  title: FrontFace Mobile SDK API
+  version: "1.0.0"
+  description: >
+    Public API surface used by the FrontFace mobile chat SDK (Flutter). Covers AI chat,
+    live human handoff, lead capture, and customer identify. See INTEGRATION_GUIDE.md for the
+    behavioral contract (session lifecycle, realtime handoff, polling fallback, state machine).
+
+
+    All endpoints are authenticated with a publishable client key in the `X-FrontFace-Key`
+    header and identified by a stable per-install `X-Visitor-Id`. Live agent replies are
+    delivered out-of-band over Supabase Realtime (channel `conversation:<id>`); that WebSocket
+    transport is not described here — see the guide.
+servers:
+  - url: https://api.frontface.app
+    description: Production
+
+security:
+  - FrontFaceKey: []
+
+tags:
+  - name: Bootstrap
+  - name: Chat
+  - name: Handoff
+  - name: Tickets
+  - name: Conversation
+  - name: Lead capture
+  - name: Customer
+
+paths:
+  /api/embed/config/{projectId}:
+    get:
+      tags: [Bootstrap]
+      summary: Fetch runtime config (branding, lead-capture, realtime credentials)
+      operationId: getEmbedConfig
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Config
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmbedConfig" }
+
+  /api/chat/message:
+    post:
+      tags: [Chat]
+      summary: Send a message and get the AI reply (synchronous)
+      operationId: sendMessage
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+        - $ref: "#/components/parameters/SessionTokenHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChatMessageRequest" }
+      responses:
+        "200":
+          description: AI response (may include handoff signals)
+          headers:
+            X-RateLimit-Remaining:
+              {
+                schema: { type: integer },
+                description: Remaining requests in window,
+              }
+            X-RateLimit-Reset:
+              {
+                schema: { type: integer },
+                description: Window reset (unix seconds),
+              }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatMessageResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "504": { $ref: "#/components/responses/Timeout" }
+
+  /api/media/uploads:
+    post:
+      tags: [Chat]
+      summary: Reserve an image or voice-note upload and get a signed PUT URL
+      description: >-
+        Step 1 of sending an image or voice note. Reserve an asset, PUT the bytes to
+        `uploadUrl`, then send a message with `parts: [{ mediaAssetId }]`. See
+        SEND_IMAGE_GUIDE.md / SEND_VOICE_GUIDE.md.
+      operationId: reserveMediaUpload
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MediaUploadRequest" }
+      responses:
+        "200":
+          description: A signed upload URL to PUT the file bytes to.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaUploadResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/chat/ensure-conversation:
+    post:
+      tags: [Chat]
+      summary: Create a conversation up front (e.g. before triggering handoff with no message yet)
+      operationId: ensureConversation
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, visitorId]
+              properties:
+                projectId: { type: string, format: uuid }
+                visitorId: { type: string, maxLength: 100 }
+                source: { $ref: "#/components/schemas/Source" }
+      responses:
+        "200":
+          description: Conversation id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversationId: { type: string, format: uuid }
+                  sessionToken:
+                    type: string
+                    description: Persist with conversationId and send as X-FrontFace-Session.
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/projects/{projectId}/handoff-availability:
+    get:
+      tags: [Handoff]
+      summary: Whether a human agent can be reached right now
+      operationId: getHandoffAvailability
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Availability
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HandoffAvailability" }
+
+  /api/conversations/{conversationId}/handoff:
+    post:
+      tags: [Handoff]
+      summary: Request a human agent for this conversation
+      operationId: triggerHandoff
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+        - $ref: "#/components/parameters/SessionTokenHeader"
+        - $ref: "#/components/parameters/ConversationIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  enum: [button_click, customer_request]
+                customerEmail: { type: string, format: email }
+                customerName: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: Handoff result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HandoffResult" }
+
+  /api/ticket-intents/{intentId}/contact:
+    post:
+      tags: [Tickets]
+      summary: Add a contact method and convert a pending ticket intent
+      description: >-
+        Optional. The recommended handling of a `contact_required` action is conversational:
+        the assistant's `response` already asks for an allowed field, so send the customer's
+        reply through POST /api/chat/message as an ordinary message and the intent is converted
+        on that turn. The value must appear verbatim in the customer's message. This endpoint
+        remains fully supported for clients that prefer a native contact form.
+      operationId: submitTicketIntentContact
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+        - $ref: "#/components/parameters/SessionTokenHeaderRequired"
+        - name: intentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TicketContactRequest" }
+      responses:
+        "200":
+          description: The ticket was committed or an existing ticket was reused.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketActionEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The intent still requires an allowed contact method.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketActionEnvelope" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503":
+          description: Ticket creation failed. No reference is issued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketActionEnvelope" }
+
+  /api/widget/conversations/{conversationId}/realtime-token:
+    post:
+      tags: [Conversation]
+      summary: Issue a short-lived JWT for private Realtime channel subscription
+      operationId: issueRealtimeToken
+      parameters:
+        - $ref: "#/components/parameters/SessionTokenHeader"
+        - $ref: "#/components/parameters/ConversationIdPath"
+      responses:
+        "200":
+          description: Realtime JWT issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    {
+                      type: string,
+                      description: "Short-lived Supabase JWT (5 min)",
+                    }
+                  expiresAt:
+                    {
+                      type: integer,
+                      description: "Unix timestamp when the token expires",
+                    }
+        "403": { description: "Invalid or missing widget session" }
+        "404":
+          {
+            description: "Private realtime not enabled, or conversation not found",
+          }
+
+  /api/widget/conversations/{conversationId}/status:
+    get:
+      tags: [Conversation]
+      summary: Conversation status, queue position, assigned agent
+      operationId: getConversationStatus
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+        - $ref: "#/components/parameters/SessionTokenHeader"
+        - $ref: "#/components/parameters/ConversationIdPath"
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/ConversationStatusResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/widget/conversations/{conversationId}/messages/public:
+    get:
+      tags: [Conversation]
+      summary: Fetch messages (full history, or only those after a timestamp)
+      operationId: fetchMessages
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+        - $ref: "#/components/parameters/SessionTokenHeader"
+        - $ref: "#/components/parameters/ConversationIdPath"
+        - name: after
+          in: query
+          required: false
+          description: ISO-8601 timestamp; returns only messages created after it (polling).
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Messages (ascending by createdAt)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: "#/components/schemas/PublicMessage" }
+
+  /api/widget/conversations/{conversationId}/typing:
+    post:
+      tags: [Conversation]
+      summary: Send a customer typing indicator (best-effort)
+      operationId: sendTyping
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+        - $ref: "#/components/parameters/ConversationIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isTyping, participantType]
+              properties:
+                isTyping: { type: boolean }
+                participantType: { type: string, enum: [customer] }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/widget/conversations/{conversationId}/presence:
+    post:
+      tags: [Conversation]
+      summary: Send a customer presence heartbeat (best-effort)
+      operationId: sendPresence
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+        - $ref: "#/components/parameters/ConversationIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, visitorId]
+              properties:
+                status: { type: string, enum: [online, idle, offline] }
+                visitorId: { type: string, maxLength: 100 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/widget/conversations/{conversationId}/csat:
+    post:
+      tags: [Conversation]
+      summary: Submit a customer satisfaction rating (1–5) for the conversation
+      description: >-
+        Record the customer's satisfaction rating after a handoff conversation ends.
+        A re-submit overwrites the previous rating; absent feedback on a re-rate preserves
+        previously submitted text. Best-effort — never block the user on failure.
+      operationId: submitCsat
+      parameters:
+        - $ref: "#/components/parameters/SessionTokenHeaderRequired"
+        - $ref: "#/components/parameters/ConversationIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CsatRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/projects/{projectId}/offline-messages:
+    post:
+      tags: [Handoff]
+      summary: Submit an offline contact message when no agents are available
+      description: >-
+        Creates a closed conversation with the message so agents can follow up from
+        the inbox. Show this form when handoff availability returns showOfflineForm: true.
+      operationId: submitOfflineMessage
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OfflineMessageRequest" }
+      responses:
+        "201":
+          description: Offline message recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  conversationId: { type: string, format: uuid }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/chat/lead-capture/status:
+    get:
+      tags: [Lead capture]
+      summary: Has this visitor already completed the lead form?
+      operationId: getLeadCaptureStatus
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+        - name: projectId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: visitorId
+          in: query
+          required: true
+          schema: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: Completion flag
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hasCompletedForm: { type: boolean }
+
+  /api/chat/lead-capture/submit-form:
+    post:
+      tags: [Lead capture]
+      summary: Submit the lead-capture form
+      operationId: submitLeadForm
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeadFormRequest" }
+      responses:
+        "200":
+          description: Result (may include a qualifying question and a fresh sessionId)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeadFormResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/chat/lead-capture/submit-inline:
+    post:
+      tags: [Lead capture]
+      summary: Lightweight inline email-only capture
+      operationId: submitInlineEmail
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, visitorId, email]
+              properties:
+                projectId: { type: string, format: uuid }
+                visitorId: { type: string, maxLength: 100 }
+                sessionId: { type: string, format: uuid, nullable: true }
+                email: { type: string, format: email }
+                captureSource: { type: string, example: inline_email }
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeadFormResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/customers/identify:
+    post:
+      tags: [Customer]
+      summary: Verify a signed identity token and sync the contact
+      description: >-
+        Identity verification. The token is an HS256 JWT minted by the TENANT'S
+        OWN BACKEND with the project's verification secret (dashboard → Settings
+        → Widget → Identity verification) — never sign it inside the app.
+        Payload: user_id (or sub, required) plus optional email, name,
+        phonenumber, custom_attributes, exp. Contact sync semantics: a claim
+        that is present upserts, an omitted claim preserves the stored value,
+        and an explicit null deletes it. Rate limited to ~10/min per
+        project+IP. See INTEGRATION_GUIDE.md §8.
+      operationId: identifyCustomer
+      security: [{ FrontFaceKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/VisitorIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visitorId, projectId, token]
+              properties:
+                visitorId: { type: string, minLength: 1, maxLength: 100 }
+                projectId: { type: string, format: uuid }
+                token:
+                  type: string
+                  minLength: 1
+                  maxLength: 4096
+                  description: >-
+                    HS256 JWT signed by the tenant backend with the project
+                    verification secret. Required claims: user_id (or sub), name
+                    (non-empty), exp, iat, jti (unique, single-use). Optional:
+                    nbf, visitor_id, email, phonenumber, custom_attributes.
+                    Lifetime (exp − iat) must be ≤ 15 minutes. See
+                    INTEGRATION_GUIDE.md §8.
+      responses:
+        "200":
+          description: >-
+            Identity applied. `contact` is the mutable current contact;
+            `verifiedIdentity` is the service-managed snapshot the token asserted
+            (what the inbox shows verified).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contact]
+                properties:
+                  contact: { $ref: "#/components/schemas/Contact" }
+                  verifiedIdentity:
+                    oneOf:
+                      - $ref: "#/components/schemas/VerifiedIdentity"
+                      - type: "null"
+                  warnings:
+                    type: array
+                    description: Non-fatal issues, e.g. EMAIL_CONFLICT when the email already belongs to another verified user (everything except the email write was applied).
+                    items: { type: string }
+        "400":
+          description: Invalid body (VALIDATION_ERROR) or invalid claims (TOKEN_CLAIMS_INVALID)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: TOKEN_INVALID (bad signature/format/alg/binding), TOKEN_EXPIRED, or TOKEN_REPLAYED (jti already used / reused by a different visitor)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: IDENTITY_NOT_CONFIGURED — the project has no verification secret yet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+components:
+  securitySchemes:
+    FrontFaceKey:
+      type: apiKey
+      in: header
+      name: X-FrontFace-Key
+      description: Publishable client key (pk_...). Safe to ship in the app binary; revocable.
+
+  parameters:
+    VisitorIdHeader:
+      name: X-Visitor-Id
+      in: header
+      required: true
+      description: Stable per-install visitor id (also mirrored into request bodies).
+      schema: { type: string, maxLength: 100 }
+    ConversationIdPath:
+      name: conversationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessionTokenHeader:
+      name: X-FrontFace-Session
+      in: header
+      required: false
+      description: >
+        Session token returned alongside sessionId (from POST /api/chat/message,
+        /api/chat/ensure-conversation, or conversation create). Send it on continued
+        chat messages and per-conversation routes. It is required when continuing an
+        already-created conversation once server-side enforcement is enabled.
+      schema: { type: string }
+    SessionTokenHeaderRequired:
+      name: X-FrontFace-Session
+      in: header
+      required: true
+      description: >
+        The session token paired with the conversation that produced this ticket
+        intent. Reuse that exact credential; the intent id alone grants no access.
+      schema: { type: string }
+
+  responses:
+    Ok:
+      description: Success
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success: { type: boolean }
+    BadRequest:
+      description: Invalid input
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Missing/invalid/revoked key, or key/project mismatch
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Too many requests — honor Retry-After
+      headers:
+        Retry-After: { schema: { type: integer }, description: Seconds to wait }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Timeout:
+      description: Upstream LLM timeout (safe to retry once)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Source:
+      type: string
+      enum: [mobile]
+      default: mobile
+      description: Always "mobile" for the mobile SDK.
+
+    ConversationStatus:
+      type: string
+      enum: [ai_active, waiting, agent_active, resolved, closed]
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+
+    EmbedConfig:
+      type: object
+      properties:
+        projectId: { type: string, format: uuid }
+        enabled: { type: boolean }
+        config:
+          type: object
+          properties:
+            primaryColor: { type: string, example: "#0a0a0a" }
+            position: { type: string, description: "web-only; ignore on mobile" }
+            greeting: { type: string }
+            greetingIntro: { type: string }
+            title: { type: string }
+            placeholder: { type: string }
+            avatarUrl: { type: string, nullable: true, format: uri }
+            launcherIconUrl: { type: string, nullable: true, format: uri, description: "web-only; ignore on mobile" }
+            bubbleColor: { type: string, nullable: true }
+            usePrimaryForHeader: { type: boolean }
+            hideBranding: { type: boolean }
+            feedbackEnabled: { type: boolean }
+            copyEnabled: { type: boolean }
+            starters:
+              type: array
+              items: { type: string }
+              description: Suggested first-message chips.
+            notice:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                text: { type: string }
+            footer:
+              type: object
+              nullable: true
+              properties:
+                text: { type: string }
+                url: { type: string, format: uri }
+            localeDefault: { type: string, description: "UI language (en, ar, etc.)" }
+            channels:
+              type: array
+              description: >-
+                External support channel launcher links. Each is a deep link — open in the
+                system browser, not an in-app thread. Omitted when empty.
+              items: { $ref: "#/components/schemas/ChannelButton" }
+        realtime:
+          type: object
+          description: Supabase Realtime config for private channel handoff.
+          properties:
+            enabled: { type: boolean }
+            supabaseUrl: { type: string, format: uri }
+            tokenBased:
+              {
+                type: boolean,
+                description: "true when private channels are enabled — use /realtime-token endpoint",
+              }
+        leadCapture: { $ref: "#/components/schemas/LeadCaptureConfig" }
+        voice:
+          type: object
+          properties:
+            enabled: { type: boolean }
+
+    LeadCaptureConfig:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        formFields:
+          type: object
+          properties:
+            email:
+              type: object
+              properties:
+                required: { type: boolean }
+            field_2: { $ref: "#/components/schemas/LeadFieldConfig" }
+            field_3: { $ref: "#/components/schemas/LeadFieldConfig" }
+        hasQualifyingQuestions: { type: boolean }
+        capture_mode:
+          type: string
+          enum: [email_after, email_first, email_required]
+
+    LeadFieldConfig:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        label: { type: string }
+        required: { type: boolean }
+
+    ChatMessageRequest:
+      type: object
+      required: [projectId, message, visitorId]
+      properties:
+        projectId: { type: string, format: uuid }
+        message: { type: string, maxLength: 2000 }
+        visitorId: { type: string, maxLength: 100 }
+        source: { $ref: "#/components/schemas/Source" }
+        sessionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Omit/null for the first message; send to continue a thread.
+        conversationHistory:
+          type: array
+          description: Recent turns for context (last ~10).
+          items:
+            type: object
+            properties:
+              role: { type: string, enum: [user, assistant] }
+              content: { type: string }
+        context:
+          type: object
+          description: >-
+            Optional analytics metadata. Nothing here is derived server-side for mobile
+            clients (unlike the web widget, which parses the browser User-Agent) — populate
+            device/os/osVersion yourself or they will be absent from the dashboard's traffic
+            breakdown. See INTEGRATION_GUIDE.md §5 for a dependency-free Dart snippet.
+          properties:
+            device:
+              {
+                type: string,
+                enum: [mobile, tablet],
+                description: "Caller-populated; no third value for native clients.",
+              }
+            os: { type: string }
+            osVersion: { type: string }
+            timezone: { type: string }
+            language: { type: string }
+            appVersion: { type: string }
+          additionalProperties: true
+        location:
+          type: object
+          description: >-
+            An explicitly shared location for THIS request (e.g. change a delivery
+            destination for a given day). Ephemeral and transactional — it is never
+            stored on the customer's profile, and its coordinates are bound server-side
+            into data connectors (the AI may choose the date/scope, never the pin). Send
+            only on an explicit user action (a "Share location" tap), never silent GPS.
+            `message` is optional when a location is present. See SEND_LOCATION_GUIDE.md.
+          required: [latitude, longitude]
+          properties:
+            latitude: { type: number, minimum: -90, maximum: 90 }
+            longitude: { type: number, minimum: -180, maximum: 180 }
+            accuracy_m:
+              { type: number, description: "GPS accuracy radius in metres." }
+            label:
+              type: string
+              nullable: true
+              description: >-
+                Optional human-readable place name. Supply it from the device's native
+                reverse geocoding if available; the dashboard falls back to the raw
+                coordinates when it is absent.
+            captured_at:
+              { type: string, format: date-time, description: "When the fix was taken." }
+        parts:
+          type: array
+          description: >-
+            Non-text parts to attach (v1: images). Upload each image first via
+            POST /api/media/uploads, then reference the returned assetId here. `message` is
+            optional when parts are present. See SEND_IMAGE_GUIDE.md.
+          items:
+            type: object
+            required: [mediaAssetId]
+            properties:
+              mediaAssetId: { type: string, format: uuid }
+
+    MediaUploadRequest:
+      type: object
+      required: [projectId, conversationId, mime]
+      properties:
+        projectId: { type: string, format: uuid }
+        conversationId: { type: string, format: uuid }
+        mime:
+          type: string
+          enum: [image/jpeg, image/png, image/webp, image/gif, audio/webm, audio/mp4, audio/mpeg, audio/ogg, audio/wav]
+        byteSize: { type: integer, description: "File size in bytes (checked against the cap)." }
+        filename: { type: string }
+
+    MediaUploadResponse:
+      type: object
+      properties:
+        assetId: { type: string, format: uuid }
+        uploadUrl:
+          type: string
+          description: Short-lived signed URL — PUT the raw file bytes here.
+        token: { type: string }
+        path: { type: string }
+
+    ChatMessageResponse:
+      type: object
+      properties:
+        response:
+          {
+            type: string,
+            description: Assistant reply; may be empty during handoff.,
+          }
+        sessionId: { type: string, format: uuid, description: Persist this. }
+        sessionToken:
+          type: string
+          description: Persist this with sessionId; send as X-FrontFace-Session on continued messages and reads.
+        sources:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              relevance: { type: number }
+        toolCalls:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              success: { type: boolean }
+              duration: { type: number }
+        processingTime: { type: number }
+        requestId: { type: string }
+        handoff:
+          type: object
+          description: Present when the AI escalated or the thread is agent/queue-owned.
+          properties:
+            triggered: { type: boolean }
+            reason:
+              type: string
+              description: e.g. in_queue, agent_handling, customer_request
+            queuePosition: { type: integer }
+            estimatedWait: { type: string }
+            conversationId: { type: string, format: uuid }
+        ticket:
+          $ref: "#/components/schemas/TicketAction"
+        assistantMessage:
+          $ref: "#/components/schemas/PersistedMessageRef"
+
+    PersistedMessageRef:
+      type: object
+      required: [id, createdAt]
+      description: |
+        Identity of the message row the server persisted for the reply in the same body.
+        Optional and additive — absent whenever no row was written (a handoff pass-through,
+        or a failed insert), in which case there is nothing to receive back.
+
+        Clients that render the reply optimistically MUST adopt this `id` as the local
+        message's id. Both delivery channels (the realtime `message:new` broadcast and
+        `GET /api/conversations/{id}/messages/public`) dedupe on message id, so a
+        client-generated id causes the same reply to be rendered a second time when it is
+        delivered back.
+      properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+
+    HandoffAvailability:
+      type: object
+      properties:
+        available: { type: boolean }
+        mode:
+          type: string
+          enum: [live, ticket, unavailable]
+          description: >
+            live = an agent can take the chat now; ticket = handoff is enabled but no agent is
+            available and ticketing is on (offer a ticket); unavailable = no human path right now.
+            As of 2026-08-07, disabling human handoff returns `unavailable` (reason
+            `handoff_disabled`) even when ticketing is on — it no longer falls back to `ticket`.
+        showButton:
+          type: boolean
+          description: >
+            True only when `mode` is `live` and the merchant enabled the button. It is no longer
+            true for `ticket`/`unavailable` — render no standing button in those states; the AI
+            offers a ticket conversationally instead.
+        buttonText: { type: string }
+        showOfflineForm: { type: boolean }
+        reason: { type: string }
+
+    HandoffResult:
+      oneOf:
+        - $ref: "#/components/schemas/LiveHandoffResult"
+        - $ref: "#/components/schemas/TicketHandoffResult"
+      discriminator:
+        propertyName: status
+        mapping:
+          agent_active: "#/components/schemas/LiveHandoffResult"
+          waiting: "#/components/schemas/LiveHandoffResult"
+          offline: "#/components/schemas/LiveHandoffResult"
+          ticket: "#/components/schemas/TicketHandoffResult"
+
+    LiveHandoffResult:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [agent_active, waiting, offline]
+        queuePosition: { type: integer }
+        estimatedWaitMinutes: { type: integer }
+        assignedAgent:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        message: { type: string }
+        showOfflineForm: { type: boolean }
+
+    TicketHandoffResult:
+      type: object
+      required: [status, ticket]
+      properties:
+        status:
+          type: string
+          enum: [ticket]
+        ticket: { $ref: "#/components/schemas/TicketAction" }
+        message: { type: string }
+        assistantMessage:
+          $ref: "#/components/schemas/PersistedMessageRef"
+
+    TicketAction:
+      oneOf:
+        - $ref: "#/components/schemas/CommittedTicketAction"
+        - $ref: "#/components/schemas/TicketContactRequiredAction"
+        - $ref: "#/components/schemas/TicketFailedAction"
+      discriminator:
+        propertyName: status
+        mapping:
+          created: "#/components/schemas/CommittedTicketAction"
+          existing_ticket_reused: "#/components/schemas/CommittedTicketAction"
+          contact_required: "#/components/schemas/TicketContactRequiredAction"
+          failed: "#/components/schemas/TicketFailedAction"
+
+    CommittedTicketAction:
+      type: object
+      additionalProperties: false
+      required: [status, ticketId, reference, subject, accessUrl]
+      properties:
+        status:
+          type: string
+          enum: [created, existing_ticket_reused]
+        ticketId: { type: string, format: uuid }
+        reference:
+          type: string
+          pattern: "^FF-[1-9][0-9]*$"
+          example: FF-1042
+        subject: { type: string, minLength: 1, maxLength: 200 }
+        accessUrl:
+          type: string
+          format: uri
+          description: Open this server-returned URL in the system browser.
+
+    TicketContactRequiredAction:
+      description: >-
+        A ticket is warranted but no confirmed contact method is on file. Preferred handling is
+        conversational — ask for one of `allowedFields` in the chat and send the customer's reply
+        as a normal message. POST /api/ticket-intents/{intentId}/contact stays available for
+        clients that prefer a native form.
+      type: object
+      additionalProperties: false
+      required: [status, intentId, allowedFields]
+      properties:
+        status:
+          type: string
+          enum: [contact_required]
+        intentId: { type: string, format: uuid }
+        allowedFields:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items:
+            type: string
+            enum: [email, phone]
+
+    TicketFailedAction:
+      type: object
+      additionalProperties: false
+      required: [status, message]
+      properties:
+        status:
+          type: string
+          enum: [failed]
+        message: { type: string, minLength: 1, maxLength: 500 }
+
+    TicketActionEnvelope:
+      type: object
+      additionalProperties: false
+      required: [ticket]
+      properties:
+        ticket: { $ref: "#/components/schemas/TicketAction" }
+
+    TicketContactRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        phone:
+          type: string
+          maxLength: 32
+          pattern: "^\\+[0-9\\s().-]+$"
+      anyOf:
+        - required: [email]
+        - required: [phone]
+
+    ConversationStatusResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/ConversationStatus" }
+        assignedAgent:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        queuePosition: { type: integer, nullable: true }
+        satisfactionRating: { type: integer, nullable: true, minimum: 1, maximum: 5 }
+        autoCloseAfterWarningMinutes:
+          type: integer
+          nullable: true
+          description: >-
+            Minutes after the inactivity warning before auto-close. Use to show a
+            countdown or tune your poll cadence during the warning phase.
+
+    PublicMessage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        senderType:
+          type: string
+          enum: [customer, agent, ai, system]
+        senderName: { type: string, nullable: true }
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: >-
+            Structured data for special message types. Known keys:
+            ticket_reference (ticket card data), csat_prompt (boolean, show rating UI),
+            event ("inactivity_warning" or "auto_closed"). Preserve this field —
+            ticket cards and CSAT prompts depend on it surviving transcript reload.
+        parts:
+          type: array
+          description: >-
+            Non-text parts of the message. Empty for a plain text message; a message may
+            have parts and empty content (e.g. a location shared on its own). Render these
+            on transcript reload so a shared location survives re-opening the app.
+          items: { $ref: "#/components/schemas/MessagePart" }
+
+    MessagePart:
+      type: object
+      description: A non-text part of a message. v1 supports `location`, `image`, and `audio`.
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [location, image, audio] }
+        processingStatus:
+          type: string
+          nullable: true
+          description: >-
+            For audio: null | "pending" | "ready" | "failed" — the transcript is in
+            `derivedText` once "ready"; the audio is playable via `url` regardless.
+        position: { type: integer }
+        mediaAssetId:
+          type: string
+          format: uuid
+          nullable: true
+          description: For type=image, the stored asset id.
+        url:
+          type: string
+          nullable: true
+          description: >-
+            For type=image, a SHORT-LIVED signed URL to display the image. It expires —
+            re-fetch the message list to get a fresh URL rather than caching it. Null while
+            the image is still processing or if signing failed.
+        derivedText:
+          type: string
+          nullable: true
+          description: >-
+            One-line summary the AI reads (shared-location sentence, or an image caption).
+        payload:
+          type: object
+          description: >-
+            For type=location: latitude/longitude/accuracy_m/label/captured_at. For
+            type=image: width/height/mime_type.
+          properties:
+            latitude: { type: number }
+            longitude: { type: number }
+            accuracy_m: { type: number }
+            label: { type: string, nullable: true }
+            captured_at: { type: string, format: date-time }
+            width: { type: integer, nullable: true }
+            height: { type: integer, nullable: true }
+            mime_type: { type: string }
+            duration_ms: { type: integer, nullable: true, description: "Audio length in ms." }
+            languages: { type: array, items: { type: string }, nullable: true, description: "Detected languages, e.g. [ar, en]." }
+
+    LeadFormRequest:
+      type: object
+      required: [projectId, visitorId, formData]
+      properties:
+        projectId: { type: string, format: uuid }
+        visitorId: { type: string, maxLength: 100 }
+        sessionId: { type: string, format: uuid, nullable: true }
+        source: { $ref: "#/components/schemas/Source" }
+        firstMessage:
+          {
+            type: string,
+            description: "The visitor's first message, or empty string.",
+          }
+        formData:
+          type: object
+          required: [email]
+          properties:
+            email: { type: string, format: email }
+            field_2: { $ref: "#/components/schemas/LeadFieldValue" }
+            field_3: { $ref: "#/components/schemas/LeadFieldValue" }
+
+    LeadFieldValue:
+      type: object
+      properties:
+        label: { type: string }
+        value: { type: string }
+
+    LeadFormResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        leadId: { type: string, format: uuid }
+        nextAction:
+          type: string
+          enum: [qualifying_question, none]
+        qualifyingQuestion: { type: string }
+        assembledGreeting:
+          type: string
+          description: Render as the next assistant bubble.
+        sessionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: A fresh conversation id may be returned (email_first) — persist it.
+        sessionToken:
+          type: string
+          description: Persist with sessionId; send as X-FrontFace-Session on continued messages and reads.
+        assistantMessage:
+          $ref: "#/components/schemas/PersistedMessageRef"
+
+    ChannelButton:
+      type: object
+      required: [type, url]
+      description: >-
+        External support channel launcher link. Open in the system browser — not an
+        in-app transport. Allowed URL schemes: https, http, mailto, tel.
+      properties:
+        type:
+          type: string
+          enum: [whatsapp, instagram, facebook, email, phone, custom]
+        url: { type: string, format: uri }
+        label: { type: string, description: "Display text; fall back to type if absent." }
+        iconUrl: { type: string, format: uri, description: "Custom icon (https/http only)." }
+
+    CsatRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5, description: "Satisfaction rating (1–5)." }
+        feedback: { type: string, maxLength: 1000, description: "Optional text feedback." }
+
+    OfflineMessageRequest:
+      type: object
+      required: [name, email, message]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, format: email }
+        message: { type: string, minLength: 1, maxLength: 5000 }
+        visitorId: { type: string, maxLength: 100 }
+
+    Contact:
+      type: object
+      description: Mutable current contact (agent- and lead-capture-editable). Never presented as verified.
+      properties:
+        customerId: { type: string, format: uuid }
+        visitorId: { type: string }
+        email: { type: string, nullable: true }
+        name: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+    VerifiedIdentity:
+      type: object
+      description: >-
+        Service-managed snapshot of what the signed identity token asserted.
+        Written only by the identify flow; read-only elsewhere. This is what the
+        inbox displays with a verified badge.
+      properties:
+        externalId:
+          type: string
+          description: The tenant's stable user id (JWT user_id/sub).
+        verifiedAt: { type: string, format: date-time }
+        email: { type: string, nullable: true }
+        name: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        customAttributes:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Verified custom attributes asserted by the identity token.

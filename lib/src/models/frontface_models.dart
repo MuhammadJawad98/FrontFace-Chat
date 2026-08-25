@@ -66,6 +66,7 @@ class FrontFaceChatMessage {
   final String? senderName;
   final DateTime createdAt;
   final FrontFaceMessageMetadata metadata;
+  final List<FrontFaceMessagePart> parts;
 
   const FrontFaceChatMessage({
     required this.id,
@@ -74,6 +75,7 @@ class FrontFaceChatMessage {
     this.senderName,
     required this.createdAt,
     this.metadata = const FrontFaceMessageMetadata({}),
+    this.parts = const [],
   });
 
   bool get isVisitor => senderType == FrontFaceSenderType.customer;
@@ -82,10 +84,19 @@ class FrontFaceChatMessage {
 
   bool get isCsatPrompt => metadata.isCsatPrompt;
 
-  FrontFaceAttachmentPayload? get attachment => FrontFaceAttachmentPayload.tryParse(
-        content: content,
-        metadata: metadata.raw,
-      );
+  bool get hasParts => parts.isNotEmpty;
+
+  /// Prefer server [parts]; fall back to legacy text/metadata parse.
+  FrontFaceAttachmentPayload? get attachment {
+    for (final part in parts) {
+      final mapped = part.toAttachmentPayload();
+      if (mapped != null) return mapped;
+    }
+    return FrontFaceAttachmentPayload.tryParse(
+      content: content,
+      metadata: metadata.raw,
+    );
+  }
 
   factory FrontFaceChatMessage.fromJson(Map<String, dynamic> json) {
     final content = json['content']?.toString() ?? '';
@@ -97,6 +108,12 @@ class FrontFaceChatMessage {
         ? rawId
         : 'srv_${senderType.name}_${createdAt.toUtc().toIso8601String()}_${content.hashCode}';
 
+    final rawParts = json['parts'] as List<dynamic>? ?? const [];
+    final parts = rawParts
+        .whereType<Map>()
+        .map((e) => FrontFaceMessagePart.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+
     return FrontFaceChatMessage(
       id: id,
       content: content,
@@ -106,6 +123,7 @@ class FrontFaceChatMessage {
       metadata: FrontFaceMessageMetadata.fromJson(
         json['metadata'] as Map<String, dynamic>?,
       ),
+      parts: parts,
     );
   }
 
@@ -115,6 +133,7 @@ class FrontFaceChatMessage {
     String? senderName,
     String? id,
     FrontFaceMessageMetadata metadata = const FrontFaceMessageMetadata({}),
+    List<FrontFaceMessagePart> parts = const [],
   }) {
     return FrontFaceChatMessage(
       id: id ?? 'local_${DateTime.now().microsecondsSinceEpoch}',
@@ -123,6 +142,7 @@ class FrontFaceChatMessage {
       senderName: senderName,
       createdAt: DateTime.now(),
       metadata: metadata,
+      parts: parts,
     );
   }
 
@@ -136,6 +156,143 @@ class FrontFaceChatMessage {
         return FrontFaceSenderType.system;
       default:
         return FrontFaceSenderType.ai;
+    }
+  }
+}
+
+enum FrontFaceMessagePartType { location, image, audio }
+
+/// Non-text part from `GET …/messages/public` (`MessagePart` in openapi).
+class FrontFaceMessagePart {
+  final String? id;
+  final FrontFaceMessagePartType type;
+  final FrontFaceMediaProcessingStatus? processingStatus;
+  final int? position;
+  final String? mediaAssetId;
+  final String? url;
+  final String? derivedText;
+  final Map<String, dynamic> payload;
+
+  const FrontFaceMessagePart({
+    this.id,
+    required this.type,
+    this.processingStatus,
+    this.position,
+    this.mediaAssetId,
+    this.url,
+    this.derivedText,
+    this.payload = const {},
+  });
+
+  factory FrontFaceMessagePart.fromJson(Map<String, dynamic> json) {
+    return FrontFaceMessagePart(
+      id: json['id']?.toString(),
+      type: _parsePartType(json['type']?.toString()),
+      processingStatus: _parseProcessing(json['processingStatus']?.toString()),
+      position: json['position'] as int?,
+      mediaAssetId: json['mediaAssetId']?.toString(),
+      url: json['url']?.toString(),
+      derivedText: json['derivedText']?.toString(),
+      payload: json['payload'] is Map
+          ? Map<String, dynamic>.from(json['payload'] as Map)
+          : const {},
+    );
+  }
+
+  factory FrontFaceMessagePart.localLocation(FrontFaceLocationData location) {
+    return FrontFaceMessagePart(
+      type: FrontFaceMessagePartType.location,
+      derivedText: location.label,
+      payload: {
+        'latitude': location.latitude,
+        'longitude': location.longitude,
+        if (location.accuracyMeters != null)
+          'accuracy_m': location.accuracyMeters,
+        if (location.label != null) 'label': location.label,
+        if (location.capturedAt != null)
+          'captured_at': location.capturedAt!.toUtc().toIso8601String(),
+      },
+    );
+  }
+
+  factory FrontFaceMessagePart.localImage({String? localPath, String? url}) {
+    return FrontFaceMessagePart(
+      type: FrontFaceMessagePartType.image,
+      url: url ?? localPath,
+      payload: {
+        if (localPath != null) 'local_path': localPath,
+      },
+    );
+  }
+
+  factory FrontFaceMessagePart.localAudio({String? localPath, String? url}) {
+    return FrontFaceMessagePart(
+      type: FrontFaceMessagePartType.audio,
+      url: url ?? localPath,
+      processingStatus: FrontFaceMediaProcessingStatus.pending,
+      payload: {
+        if (localPath != null) 'local_path': localPath,
+      },
+    );
+  }
+
+  double? get latitude => (payload['latitude'] as num?)?.toDouble();
+  double? get longitude => (payload['longitude'] as num?)?.toDouble();
+  String? get label => payload['label']?.toString() ?? derivedText;
+  int? get durationMs => payload['duration_ms'] as int?;
+  String? get localPath => payload['local_path']?.toString();
+
+  FrontFaceAttachmentPayload? toAttachmentPayload() {
+    switch (type) {
+      case FrontFaceMessagePartType.location:
+        if (latitude == null || longitude == null) return null;
+        return FrontFaceAttachmentPayload(
+          kind: FrontFaceAttachmentKind.location,
+          latitude: latitude,
+          longitude: longitude,
+          label: label,
+          derivedText: derivedText,
+          url: 'https://maps.google.com/?q=$latitude,$longitude',
+        );
+      case FrontFaceMessagePartType.image:
+        return FrontFaceAttachmentPayload(
+          kind: FrontFaceAttachmentKind.image,
+          url: url ?? localPath,
+          label: derivedText,
+          derivedText: derivedText,
+        );
+      case FrontFaceMessagePartType.audio:
+        return FrontFaceAttachmentPayload(
+          kind: FrontFaceAttachmentKind.audio,
+          url: url ?? localPath,
+          label: derivedText,
+          derivedText: derivedText,
+          processingStatus: processingStatus,
+        );
+    }
+  }
+
+  static FrontFaceMessagePartType _parsePartType(String? value) {
+    switch (value) {
+      case 'image':
+        return FrontFaceMessagePartType.image;
+      case 'audio':
+        return FrontFaceMessagePartType.audio;
+      default:
+        return FrontFaceMessagePartType.location;
+    }
+  }
+
+  static FrontFaceMediaProcessingStatus? _parseProcessing(String? value) {
+    switch (value) {
+      case 'pending':
+        return FrontFaceMediaProcessingStatus.pending;
+      case 'ready':
+        return FrontFaceMediaProcessingStatus.ready;
+      case 'failed':
+        return FrontFaceMediaProcessingStatus.failed;
+      default:
+        return null;
     }
   }
 }
@@ -508,6 +665,38 @@ class FrontFaceApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Response from `POST /api/media/uploads`.
+class FrontFaceMediaUploadReservation {
+  final String assetId;
+  final String uploadUrl;
+  final String? token;
+  final String? path;
+
+  const FrontFaceMediaUploadReservation({
+    required this.assetId,
+    required this.uploadUrl,
+    this.token,
+    this.path,
+  });
+
+  factory FrontFaceMediaUploadReservation.fromJson(Map<String, dynamic> json) {
+    final assetId = json['assetId']?.toString() ?? '';
+    final uploadUrl = json['uploadUrl']?.toString() ?? '';
+    if (assetId.isEmpty || uploadUrl.isEmpty) {
+      throw const FrontFaceApiException(
+        code: 'INVALID_UPLOAD_RESPONSE',
+        message: 'Media upload reservation was incomplete.',
+      );
+    }
+    return FrontFaceMediaUploadReservation(
+      assetId: assetId,
+      uploadUrl: uploadUrl,
+      token: json['token']?.toString(),
+      path: json['path']?.toString(),
+    );
+  }
 }
 
 /// Thrown when `POST /api/customers/identify` fails.

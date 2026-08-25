@@ -29,12 +29,16 @@ class FrontFaceApiService {
 
   Future<Map<String, dynamic>> sendMessage({
     required String visitorId,
-    required String message,
+    String message = '',
     String? sessionId,
     String? sessionToken,
     List<Map<String, String>>? conversationHistory,
+    Map<String, dynamic>? location,
+    List<Map<String, String>>? parts,
   }) async {
     final context = await _buildContext();
+    final hasLocation = location != null && location.isNotEmpty;
+    final hasParts = parts != null && parts.isNotEmpty;
     return _api.post(
       '/api/chat/message',
       visitorId: visitorId,
@@ -51,7 +55,46 @@ class FrontFaceApiService {
             conversationHistory.isNotEmpty)
           'conversationHistory': conversationHistory,
         if (context.isNotEmpty) 'context': context,
+        if (hasLocation) 'location': location,
+        if (hasParts) 'parts': parts,
       },
+    );
+  }
+
+  /// Step 1 of image/voice send — reserve a signed PUT URL.
+  Future<FrontFaceMediaUploadReservation> reserveMediaUpload({
+    required String visitorId,
+    required String conversationId,
+    required String? sessionToken,
+    required String mime,
+    int? byteSize,
+    String? filename,
+  }) async {
+    final data = await _api.post(
+      '/api/media/uploads',
+      visitorId: visitorId,
+      sessionToken: sessionToken,
+      body: {
+        'projectId': config.projectId,
+        'conversationId': conversationId,
+        'mime': mime,
+        if (byteSize != null) 'byteSize': byteSize,
+        if (filename != null && filename.isNotEmpty) 'filename': filename,
+      },
+    );
+    return FrontFaceMediaUploadReservation.fromJson(data);
+  }
+
+  /// Step 2 — PUT file bytes to the signed [uploadUrl].
+  Future<void> uploadMediaBytes({
+    required String uploadUrl,
+    required List<int> bytes,
+    required String contentType,
+  }) {
+    return _api.putBytes(
+      uploadUrl,
+      bytes: bytes,
+      contentType: contentType,
     );
   }
 

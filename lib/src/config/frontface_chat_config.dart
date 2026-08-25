@@ -44,10 +44,10 @@ class FrontFaceChatConfig {
   /// never the raw user id. Leave null for anonymous / device-scoped chats.
   final String? visitorId;
 
-  /// Optional attachments (location / images / audio / video). Defaults off.
+  /// Optional attachments (location / images / voice). Defaults off.
   ///
-  /// See [FrontFaceAttachmentsConfig]. When media is enabled you must supply
-  /// an [FrontFaceAttachmentsConfig.uploader]. When location is enabled you
+  /// See [FrontFaceAttachmentsConfig]. Image and voice upload use FrontFace
+  /// signed URLs — no host uploader required. When location is enabled you
   /// must supply [FrontFaceAttachmentsConfig.googleMapsApiKey] (and the same
   /// key in the host Android/iOS native projects).
   final FrontFaceAttachmentsConfig attachments;

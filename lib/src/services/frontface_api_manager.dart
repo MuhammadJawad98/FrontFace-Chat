@@ -88,6 +88,44 @@ class FrontFaceApiManager {
     }
   }
 
+  /// PUT raw bytes to a signed upload URL (no FrontFace auth headers).
+  Future<void> putBytes(
+    String uploadUrl, {
+    required List<int> bytes,
+    required String contentType,
+  }) async {
+    _log('PUT (${bytes.length} bytes, $contentType): $uploadUrl');
+    try {
+      final response = await http.put(
+        Uri.parse(uploadUrl),
+        headers: {'Content-Type': contentType},
+        body: bytes,
+      );
+      _log('PUT (${response.statusCode})');
+      if (response.statusCode >= 400) {
+        throw FrontFaceApiException(
+          code: 'UPLOAD_FAILED',
+          message: 'Media upload failed (${response.statusCode}).',
+          statusCode: response.statusCode,
+        );
+      }
+    } on FrontFaceApiException {
+      rethrow;
+    } on SocketException {
+      throw const FrontFaceApiException(
+        code: 'NETWORK_ERROR',
+        message:
+            "You're offline. Check your internet connection and try again.",
+      );
+    } catch (e) {
+      if (e is FrontFaceApiException) rethrow;
+      throw const FrontFaceApiException(
+        code: 'UNKNOWN_ERROR',
+        message: 'Something went wrong. Please try again.',
+      );
+    }
+  }
+
   Map<String, dynamic> _parseResponse(
     http.Response response, {
     bool throwOnError = true,
