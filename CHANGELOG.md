@@ -1,10 +1,14 @@
+## 1.5.1
+
+* Docs: drop redundant root markdown (`BREAKING_CHANGES`, dated changelog snapshot, `README_SDK_PACKAGE`, `SEND_*` guides). Keep `README`, `CHANGELOG`, `INTEGRATION_GUIDE`, `CHAT_HISTORY_GUIDE`, `IDENTITY_VERIFICATION_GUIDE`. Location/image/voice contracts live in `INTEGRATION_GUIDE` §5.3–5.5.
+
 ## 1.5.0
 
 * Breaking: attachments use the official FrontFace media APIs — remove host `uploader` / `FrontFaceUploadedAttachment`. Image & voice: reserve → signed PUT → `parts: [{ mediaAssetId }]`. Location: `location` object on `POST /api/chat/message`.
 * Breaking: video attachments removed (not in the chat API). Use images or voice notes instead.
 * Add: parse/render `MessagePart` (`location` / `image` / `audio`) on history reload, including voice transcript (`derivedText` / `processingStatus`).
 * Add: in-chat voice note recorder (`record` + mic permission).
-* Docs: align with `SEND_*_GUIDE.md` / `openapi.yaml` / `INTEGRATION_GUIDE.md` §5.3–5.5.
+* Docs: align with `INTEGRATION_GUIDE.md` §5.3–5.5 / `openapi.yaml`.
 
 ## 1.4.1
 

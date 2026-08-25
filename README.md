@@ -27,7 +27,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.5.0
+  frontface_chat: ^1.5.1
 ```
 
 For local development (this repo lives next to your app):
@@ -184,7 +184,7 @@ final config = FrontFaceChatConfig(
 );
 ```
 
-See `SEND_LOCATION_GUIDE.md`, `SEND_IMAGE_GUIDE.md`, and `SEND_VOICE_GUIDE.md`.
+See `INTEGRATION_GUIDE.md` §5.3–5.5 for the location / image / voice API contracts.
 
 **Native setup (host app):**
 

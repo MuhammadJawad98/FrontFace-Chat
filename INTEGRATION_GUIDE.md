@@ -405,26 +405,66 @@ the ticket card without re-fetching anything.
 ### 5.3 Sending a location
 
 A message can carry an explicitly shared location — for example to change a delivery
-destination for a given day. Send a `location` object on the same `POST /api/chat/message`
-call; coordinates are bound into data connectors server-side (the AI chooses the day, never
-the pin), and the location is ephemeral (never saved to the customer profile). Full contract,
-payload shape, and UX/permission notes are in **[SEND_LOCATION_GUIDE.md](./SEND_LOCATION_GUIDE.md)**.
+destination for a given day. Two rules define how FrontFace treats it:
+
+- **Explicit** — send only on a deliberate user action ("Share location" tap), never silent GPS.
+- **Transactional** — used for the *current* request only; never written to the customer profile.
+
+Send a `location` object on the same `POST /api/chat/message` call:
+
+```json
+{
+  "projectId": "…",
+  "visitorId": "…",
+  "message": "Please deliver my Aug 26 order here",
+  "location": {
+    "latitude": 24.7136,
+    "longitude": 46.6753,
+    "accuracy_m": 12,
+    "label": "Al Olaya, Riyadh",
+    "captured_at": "2026-08-24T18:20:00Z"
+  }
+}
+```
+
+- `latitude` / `longitude` required (`-90..90` / `-180..180`).
+- `message` is optional when `location` is present.
+- `label`, `accuracy_m`, `captured_at` are optional (reverse-geocode `label` on-device if available).
+
+On transcript reload, the location comes back in `parts` (`type: "location"`) — render the
+label (or coordinates) with a Maps link so it survives re-opening the app.
 
 ### 5.4 Sending an image
 
-A message can carry one or more images. Upload each image directly to storage via a signed
-URL (`POST /api/media/uploads` → `PUT` the bytes), then send the message with
-`parts: [{ mediaAssetId }]`. The AI sees the actual image on that turn; the agent sees a
-zoomable thumbnail. Full three-step contract, size/type limits, and how to read images back
-are in **[SEND_IMAGE_GUIDE.md](./SEND_IMAGE_GUIDE.md)**.
+Upload each image directly to storage via a signed URL, then reference it from the message.
+Allowed: `image/jpeg`, `image/png`, `image/webp`, `image/gif` — max **10 MB**.
+
+1. **Reserve** — `POST /api/media/uploads` with
+   `{ projectId, conversationId, mime, byteSize?, filename? }` →
+   `{ assetId, uploadUrl, token, path }`.
+2. **Upload** — `PUT` raw bytes to `uploadUrl` with matching `Content-Type` (no auth header;
+   the URL is signed).
+3. **Send** — `POST /api/chat/message` with `parts: [{ mediaAssetId }]`. `message` is optional
+   when `parts` are present (up to 10 images).
+
+On reload, an image part has `type: "image"`, a **short-lived** signed `url` (re-fetch to
+refresh), and optional `derivedText` (caption / alt text).
 
 ### 5.5 Sending a voice note
 
-A message can carry a voice note. Same three-step upload as an image (audio mime types, 25 MB
-cap), then `parts: [{ mediaAssetId }]`. The backend transcribes it (Arabic + English +
-code-switching) so the AI can answer, and the agent gets a player with the transcript. Full
-contract and how to read voice notes back (`type: "audio"`, `url`, `processingStatus`,
-`derivedText`, `duration_ms`) are in **[SEND_VOICE_GUIDE.md](./SEND_VOICE_GUIDE.md)**.
+Same three-step upload as an image. Allowed audio: `audio/webm`, `audio/mp4`, `audio/mpeg`,
+`audio/ogg`, `audio/wav` — max **25 MB**. Record in the device’s natural format (no
+transcoding required).
+
+1. Reserve → 2. PUT bytes → 3. Send `parts: [{ mediaAssetId }]` (empty `message` is valid).
+
+The backend transcribes (Arabic + English + code-switching); transcription gates the AI reply.
+On reload, an audio part has:
+
+- `url` — short-lived signed play URL (usable even while transcribing)
+- `processingStatus` — `"pending"` | `"ready"` | `"failed"`
+- `derivedText` — transcript once `"ready"`
+- `payload.duration_ms`, `payload.languages`
 
 ---
 
