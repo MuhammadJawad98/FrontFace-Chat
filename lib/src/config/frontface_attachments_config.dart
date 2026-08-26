@@ -6,10 +6,11 @@ import 'frontface_chat_strings.dart';
 /// signed URLs (`POST /api/media/uploads` → `PUT` bytes → `parts` on
 /// `POST /api/chat/message`) — no host uploader is required.
 ///
-/// Location sharing needs [googleMapsApiKey] for the in-chat map picker, plus
-/// the same key in the host Android/iOS native config (see README).
+/// [googleMapsApiKey] is **optional**. With a key: in-app map picker, place
+/// search, and static map previews. Without a key: users can still share their
+/// current GPS location (no map UI).
 class FrontFaceAttachmentsConfig {
-  /// Show "Share location" and open an in-app Google Map picker.
+  /// Show "Share location". Works with or without [googleMapsApiKey].
   final bool enableLocation;
 
   /// Allow picking / capturing images (JPEG/PNG/WebP/GIF, max 10 MB).
@@ -18,7 +19,8 @@ class FrontFaceAttachmentsConfig {
   /// Allow recording / attaching voice notes (max 25 MB).
   final bool enableAudio;
 
-  /// Google Maps API key for the map picker + static map previews.
+  /// Optional Google Maps API key for the map picker, place search, and static
+  /// map previews. When null/empty, location still works via current GPS.
   final String? googleMapsApiKey;
 
   /// Max image size in bytes (API cap: 10 MB).
@@ -43,15 +45,14 @@ class FrontFaceAttachmentsConfig {
 
   bool get mediaEnabled => enableImages || enableAudio;
 
-  void validate() {
-    if (enableLocation &&
-        (googleMapsApiKey == null || googleMapsApiKey!.trim().isEmpty)) {
-      throw ArgumentError(
-        'FrontFaceAttachmentsConfig.googleMapsApiKey is required when '
-        'enableLocation is true.',
-      );
-    }
+  /// True when a non-empty Maps key is configured (map picker + previews).
+  bool get hasMapsKey {
+    final key = googleMapsApiKey?.trim();
+    return key != null && key.isNotEmpty;
   }
+
+  /// No-op — kept for call-site compatibility. Maps key is optional.
+  void validate() {}
 }
 
 /// Kind of pending attachment.
@@ -59,6 +60,9 @@ enum FrontFaceAttachmentKind { location, image, audio }
 
 /// Audio transcript pipeline status from `MessagePart.processingStatus`.
 enum FrontFaceMediaProcessingStatus { pending, ready, failed }
+
+/// Client-side upload state for optimistic attachment bubbles.
+enum FrontFaceAttachmentUploadStatus { uploading, failed, sent }
 
 /// Local file waiting to be uploaded to FrontFace storage.
 class FrontFacePendingAttachment {
@@ -115,6 +119,9 @@ class FrontFaceAttachmentPayload {
   final String? derivedText;
   final FrontFaceMediaProcessingStatus? processingStatus;
 
+  /// Optimistic send state — [uploading] shows a loader on the bubble.
+  final FrontFaceAttachmentUploadStatus? uploadStatus;
+
   const FrontFaceAttachmentPayload({
     required this.kind,
     this.url,
@@ -125,7 +132,42 @@ class FrontFaceAttachmentPayload {
     this.capturedAt,
     this.derivedText,
     this.processingStatus,
+    this.uploadStatus,
   });
+
+  bool get isUploading =>
+      uploadStatus == FrontFaceAttachmentUploadStatus.uploading;
+
+  bool get isUploadFailed =>
+      uploadStatus == FrontFaceAttachmentUploadStatus.failed;
+
+  FrontFaceAttachmentPayload copyWith({
+    FrontFaceAttachmentKind? kind,
+    String? url,
+    double? latitude,
+    double? longitude,
+    String? label,
+    double? accuracyMeters,
+    DateTime? capturedAt,
+    String? derivedText,
+    FrontFaceMediaProcessingStatus? processingStatus,
+    FrontFaceAttachmentUploadStatus? uploadStatus,
+    bool clearUploadStatus = false,
+  }) {
+    return FrontFaceAttachmentPayload(
+      kind: kind ?? this.kind,
+      url: url ?? this.url,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      label: label ?? this.label,
+      accuracyMeters: accuracyMeters ?? this.accuracyMeters,
+      capturedAt: capturedAt ?? this.capturedAt,
+      derivedText: derivedText ?? this.derivedText,
+      processingStatus: processingStatus ?? this.processingStatus,
+      uploadStatus:
+          clearUploadStatus ? null : (uploadStatus ?? this.uploadStatus),
+    );
+  }
 
   FrontFaceLocationData? toLocationData() {
     if (kind != FrontFaceAttachmentKind.location) return null;
@@ -168,6 +210,7 @@ class FrontFaceAttachmentPayload {
           if (accuracyMeters != null) 'accuracy_m': accuracyMeters,
           if (capturedAt != null)
             'captured_at': capturedAt!.toUtc().toIso8601String(),
+          if (uploadStatus != null) 'upload_status': uploadStatus!.name,
         },
       };
 
@@ -194,6 +237,7 @@ class FrontFaceAttachmentPayload {
           longitude: (raw['longitude'] as num?)?.toDouble(),
           label: raw['label']?.toString(),
           accuracyMeters: (raw['accuracy_m'] as num?)?.toDouble(),
+          uploadStatus: _parseUploadStatus(raw['upload_status']?.toString()),
         );
       }
     }
@@ -234,5 +278,18 @@ class FrontFaceAttachmentPayload {
     }
 
     return null;
+  }
+
+  static FrontFaceAttachmentUploadStatus? _parseUploadStatus(String? value) {
+    switch (value) {
+      case 'uploading':
+        return FrontFaceAttachmentUploadStatus.uploading;
+      case 'failed':
+        return FrontFaceAttachmentUploadStatus.failed;
+      case 'sent':
+        return FrontFaceAttachmentUploadStatus.sent;
+      default:
+        return null;
+    }
   }
 }

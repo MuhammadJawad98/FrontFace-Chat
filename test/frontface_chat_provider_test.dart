@@ -1085,6 +1085,76 @@ void main() {
   });
 
   group('attachments API', () {
+    test('sendLocationAttachment keeps a visible customer location bubble', () async {
+      final config = FrontFaceChatConfig(
+        projectId: testConfig.projectId,
+        publishableKey: testConfig.publishableKey,
+        requireLeadCaptureBeforeChat: false,
+        attachments: const FrontFaceAttachmentsConfig(
+          enableLocation: true,
+          googleMapsApiKey: 'AIza-test',
+        ),
+      );
+      final fake = FakeApiManager(config);
+      // Server history returns a location part with string coords (common JSON)
+      // and empty content — previously this could wipe the local bubble.
+      fake.messagesResponse = [
+        {
+          'id': 'msg_loc_1',
+          'content': '',
+          'senderType': 'customer',
+          'createdAt': DateTime.now().toUtc().toIso8601String(),
+          'parts': [
+            {
+              'type': 'location',
+              'payload': {
+                'latitude': '24.7',
+                'longitude': '46.6',
+                'label': 'Riyadh',
+              },
+            },
+          ],
+        },
+        {
+          'id': 'msg_ai_1',
+          'content': 'Got your location.',
+          'senderType': 'ai',
+          'createdAt': DateTime.now()
+              .add(const Duration(seconds: 1))
+              .toUtc()
+              .toIso8601String(),
+        },
+      ];
+      fake.sendMessageResponder = (_) => {
+            'response': 'Got your location.',
+            'sessionId': 'sess_1',
+            'sessionToken': 'tok_1',
+          };
+
+      final provider = _buildProvider(fake, config: config);
+      await provider.initialize();
+
+      await provider.sendLocationAttachment(
+        const FrontFaceAttachmentPayload(
+          kind: FrontFaceAttachmentKind.location,
+          latitude: 24.7,
+          longitude: 46.6,
+          label: 'Riyadh',
+        ),
+      );
+
+      final customer = provider.messages.where(
+        (m) => m.senderType == FrontFaceSenderType.customer,
+      );
+      expect(customer, isNotEmpty);
+      expect(customer.every((m) => m.attachment != null), isTrue);
+      expect(
+        customer.first.attachment!.kind,
+        FrontFaceAttachmentKind.location,
+      );
+      expect(customer.first.attachment!.latitude, closeTo(24.7, 0.001));
+    });
+
     test('sendLocationAttachment posts location object', () async {
       final config = FrontFaceChatConfig(
         projectId: testConfig.projectId,
@@ -1166,6 +1236,53 @@ void main() {
       final parts = msgCall.body?['parts'] as List?;
       expect(parts, isNotEmpty);
       expect(parts!.first['mediaAssetId'], 'asset_1');
+    });
+
+    test('optimistic media bubble shows uploading then clears', () async {
+      final config = FrontFaceChatConfig(
+        projectId: testConfig.projectId,
+        publishableKey: testConfig.publishableKey,
+        requireLeadCaptureBeforeChat: false,
+        attachments: const FrontFaceAttachmentsConfig(enableAudio: true),
+      );
+      final fake = FakeApiManager(config)..delay = const Duration(milliseconds: 40);
+      final provider = _buildProvider(fake, config: config);
+      await provider.initialize();
+
+      final temp = await File(
+        '${Directory.systemTemp.path}/ff_aud_${DateTime.now().microsecondsSinceEpoch}.mp3',
+      ).create();
+      await temp.writeAsBytes(List<int>.filled(32, 2));
+      addTearDown(() => temp.deleteSync());
+
+      final future = provider.sendMediaAttachment(
+        FrontFacePendingAttachment(
+          kind: FrontFaceAttachmentKind.audio,
+          path: temp.path,
+          fileName: 'note.mp3',
+          mimeType: 'audio/mpeg',
+          byteLength: 32,
+        ),
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(
+        provider.messages.any((m) => m.isAttachmentUploading),
+        isTrue,
+        reason: 'user bubble must appear immediately with upload loader',
+      );
+      expect(
+        provider.showTypingIndicator,
+        isFalse,
+        reason: 'attachment upload uses bubble loader, not agent typing dots',
+      );
+
+      await future;
+      expect(provider.messages.any((m) => m.isAttachmentUploading), isFalse);
+      final customer = provider.messages.lastWhere(
+        (m) => m.senderType == FrontFaceSenderType.customer,
+      );
+      expect(customer.attachment?.kind, FrontFaceAttachmentKind.audio);
     });
   });
 }

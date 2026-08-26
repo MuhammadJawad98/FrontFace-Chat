@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -85,6 +86,9 @@ class FrontFaceChatProvider extends ChangeNotifier
   /// Attachment options from [FrontFaceChatConfig.attachments].
   FrontFaceAttachmentsConfig get attachmentsConfig => _chatConfig.attachments;
 
+  /// Whether the app-bar refresh / new-chat button is shown.
+  bool get showNewChatButton => _chatConfig.showNewChatButton;
+
   /// Stable visitor id used on every request (`X-Visitor-Id` + body).
   /// Null until [initialize] / [setVisitorId] runs.
   String? get visitorId => _visitorId;
@@ -104,6 +108,17 @@ class FrontFaceChatProvider extends ChangeNotifier
 
   /// True while a human agent is typing (Realtime only — never faked).
   bool get agentTyping => _agentTyping;
+
+  /// Bottom "typing" dots. Hidden while an attachment upload loader is on the
+  /// user bubble so media sends feel instant rather than agent-first.
+  bool get showTypingIndicator =>
+      agentTyping || (isSending && !_hasUploadingCustomerAttachment);
+
+  bool get _hasUploadingCustomerAttachment => _messages.any(
+        (m) =>
+            m.senderType == FrontFaceSenderType.customer &&
+            m.isAttachmentUploading,
+      );
 
   /// Whether the Realtime channel is currently subscribed.
   bool get isRealtimeConnected => _realtime.isConnected;
@@ -222,9 +237,10 @@ class FrontFaceChatProvider extends ChangeNotifier
     } else {
       _visitorId = await _api.getOrCreateVisitorId();
     }
-    if (_chatConfig.debugLogging) {
-      // ignore: avoid_print
-      print('[FrontFace] visitorId=$_visitorId (must stay identical across launches)');
+    if (kDebugMode && _chatConfig.debugLogging) {
+      debugPrint(
+        '[FrontFace] visitorId=$_visitorId (must stay identical across launches)',
+      );
     }
   }
 
@@ -388,17 +404,22 @@ class FrontFaceChatProvider extends ChangeNotifier
     final data = location.toLocationData();
     if (data == null) return;
 
-    final content = location.toMessageContent(_strings);
+    final uploading = location.copyWith(
+      uploadStatus: FrontFaceAttachmentUploadStatus.uploading,
+    );
+    final content = uploading.toMessageContent(_strings);
     final part = FrontFaceMessagePart.localLocation(data);
+    final localId = 'local_${DateTime.now().microsecondsSinceEpoch}';
 
     stopTyping();
     _isSending = true;
     _error = null;
     _appendMessage(
       FrontFaceChatMessage.local(
+        id: localId,
         content: content,
         senderType: FrontFaceSenderType.customer,
-        metadata: FrontFaceMessageMetadata(location.toMetadata()),
+        metadata: FrontFaceMessageMetadata(uploading.toMetadata()),
         parts: [part],
       ),
     );
@@ -409,13 +430,18 @@ class FrontFaceChatProvider extends ChangeNotifier
         '',
         location: data.toJson(),
       );
+      // Promote local bubble in place (keeps order), then fold in server URLs.
+      await _mergeServerHistory();
+      _markLocalAttachmentSent(localId);
     } on FrontFaceApiException catch (e) {
+      _markLocalAttachmentFailed(localId);
       if (_isSessionStale(e)) {
         await _recoverStaleSession();
       } else {
         _error = e.message;
       }
     } catch (_) {
+      _markLocalAttachmentFailed(localId);
       _error = _strings.failedToSendMessage;
     } finally {
       _isSending = false;
@@ -445,6 +471,7 @@ class FrontFaceChatProvider extends ChangeNotifier
     _isSending = true;
     _error = null;
 
+    final localId = 'local_${DateTime.now().microsecondsSinceEpoch}';
     final provisional = switch (pending.kind) {
       FrontFaceAttachmentKind.image => FrontFaceMessagePart.localImage(
           localPath: pending.path,
@@ -458,9 +485,12 @@ class FrontFaceChatProvider extends ChangeNotifier
       kind: pending.kind,
       url: pending.path,
       label: pending.fileName,
+      uploadStatus: FrontFaceAttachmentUploadStatus.uploading,
     );
+    // Show the local file in the user bubble immediately with a loader.
     _appendMessage(
       FrontFaceChatMessage.local(
+        id: localId,
         content: placeholder.toMessageContent(_strings),
         senderType: FrontFaceSenderType.customer,
         metadata: FrontFaceMessageMetadata(placeholder.toMetadata()),
@@ -497,6 +527,8 @@ class FrontFaceChatProvider extends ChangeNotifier
         byteSize: bytes.length,
         filename: pending.fileName,
       );
+      // Stamp asset id on the local bubble so history merge can match it.
+      _stampLocalMediaAssetId(localId, reservation.assetId);
       await _api.uploadMediaBytes(
         uploadUrl: reservation.uploadUrl,
         bytes: bytes,
@@ -508,13 +540,17 @@ class FrontFaceChatProvider extends ChangeNotifier
           {'mediaAssetId': reservation.assetId},
         ],
       );
+      await _mergeServerHistory();
+      _markLocalAttachmentSent(localId);
     } on FrontFaceApiException catch (e) {
+      _markLocalAttachmentFailed(localId);
       if (_isSessionStale(e)) {
         await _recoverStaleSession();
       } else {
         _error = e.message;
       }
     } catch (_) {
+      _markLocalAttachmentFailed(localId);
       _error = _strings.attachmentUploadFailed;
     } finally {
       _isSending = false;
@@ -1186,16 +1222,75 @@ class FrontFaceChatProvider extends ChangeNotifier
         (m) =>
             m.id.startsWith('local_') &&
             m.senderType == message.senderType &&
-            m.content.trim() == content,
+            m.content.trim() == content &&
+            content.isNotEmpty,
       );
+
+      // Location / media: replace the matching local provisional **in place**
+      // so list order stays stable (user bubble stays above the agent reply).
+      if (message.hasParts) {
+        final idx = _messages.lastIndexWhere(
+          (m) =>
+              m.id.startsWith('local_') &&
+              m.senderType == message.senderType &&
+              m.hasParts &&
+              _attachmentPartsOverlap(m.parts, message.parts),
+        );
+        if (idx >= 0) {
+          final local = _messages[idx];
+          final mergedParts =
+              _mergePartsPreferLocal(local.parts, message.parts);
+          // Never promote to a blank bubble — if the server part can't be
+          // rendered yet, keep the local attachment the user already saw.
+          final promoted = FrontFaceChatMessage(
+            id: message.id,
+            content:
+                message.content.isNotEmpty ? message.content : local.content,
+            senderType: message.senderType,
+            senderName: message.senderName ?? local.senderName,
+            createdAt: local.createdAt,
+            metadata: _mergeAttachmentMetadata(local.metadata, message.metadata),
+            parts: mergedParts,
+          );
+          final parts = (promoted.attachment == null && local.attachment != null)
+              ? local.parts
+              : mergedParts;
+          _messages[idx] = FrontFaceChatMessage(
+            id: promoted.id,
+            content: promoted.content,
+            senderType: promoted.senderType,
+            senderName: promoted.senderName,
+            createdAt: promoted.createdAt,
+            metadata: promoted.metadata,
+            parts: parts,
+          );
+          _lastMessageAt = _messages.isEmpty
+              ? null
+              : _messages.last.createdAt.toUtc().toIso8601String();
+          return;
+        }
+      }
     }
 
     // Same sender + text already shown (server id, earlier local, or a
     // second poll of the same payload with a different id) — skip.
-    if (_messages.any(
-      (m) =>
-          m.senderType == message.senderType && m.content.trim() == content,
-    )) {
+    if (content.isNotEmpty &&
+        _messages.any(
+          (m) =>
+              m.senderType == message.senderType &&
+              m.content.trim() == content,
+        )) {
+      return;
+    }
+
+    // Same attachment parts already shown (empty-content location/media).
+    if (message.hasParts &&
+        _messages.any(
+          (m) =>
+              m.senderType == message.senderType &&
+              m.hasParts &&
+              _attachmentPartsOverlap(m.parts, message.parts),
+        )) {
       return;
     }
 
@@ -1206,6 +1301,286 @@ class FrontFaceChatProvider extends ChangeNotifier
     _lastMessageAt = _messages.isEmpty
         ? null
         : _messages.last.createdAt.toUtc().toIso8601String();
+  }
+
+  /// Keep a local file path / location pin as fallback display when the
+  /// server part is incomplete — avoids a blank flicker on promote.
+  List<FrontFaceMessagePart> _mergePartsPreferLocal(
+    List<FrontFaceMessagePart> local,
+    List<FrontFaceMessagePart> server,
+  ) {
+    if (server.isEmpty) return local;
+    if (local.isEmpty) return server;
+    return server.map((part) {
+      FrontFaceMessagePart? match;
+      for (final l in local) {
+        if (l.type == part.type) {
+          match = l;
+          break;
+        }
+      }
+      if (match == null) return part;
+
+      if (part.type == FrontFaceMessagePartType.location) {
+        final lat = part.latitude ?? match.latitude;
+        final lng = part.longitude ?? match.longitude;
+        if (lat == null || lng == null) return match;
+        return FrontFaceMessagePart(
+          id: part.id ?? match.id,
+          type: part.type,
+          processingStatus: part.processingStatus ?? match.processingStatus,
+          position: part.position ?? match.position,
+          mediaAssetId: part.mediaAssetId ?? match.mediaAssetId,
+          url: part.url ?? match.url,
+          derivedText: part.derivedText ?? match.derivedText,
+          payload: {
+            ...match.payload,
+            ...part.payload,
+            'latitude': lat,
+            'longitude': lng,
+            if ((part.label ?? match.label) != null)
+              'label': part.label ?? match.label,
+          },
+        );
+      }
+
+      final localPath = match.localPath;
+      if (localPath == null || localPath.isEmpty) return part;
+      final serverUrl = part.url;
+      final hasRemote = serverUrl != null &&
+          (serverUrl.startsWith('http://') || serverUrl.startsWith('https://'));
+      if (hasRemote) {
+        return FrontFaceMessagePart(
+          id: part.id,
+          type: part.type,
+          processingStatus: part.processingStatus,
+          position: part.position,
+          mediaAssetId: part.mediaAssetId ?? match.mediaAssetId,
+          url: serverUrl,
+          derivedText: part.derivedText ?? match.derivedText,
+          payload: {
+            ...part.payload,
+            'local_path': localPath,
+          },
+        );
+      }
+      return FrontFaceMessagePart(
+        id: part.id,
+        type: part.type,
+        processingStatus: part.processingStatus,
+        position: part.position,
+        mediaAssetId: part.mediaAssetId ?? match.mediaAssetId,
+        url: serverUrl ?? localPath,
+        derivedText: part.derivedText ?? match.derivedText,
+        payload: {
+          ...part.payload,
+          'local_path': localPath,
+        },
+      );
+    }).toList();
+  }
+
+  /// Prefer server metadata, but keep local attachment fields (coords / url)
+  /// when the server omits them — and drop the uploading flag.
+  FrontFaceMessageMetadata _mergeAttachmentMetadata(
+    FrontFaceMessageMetadata local,
+    FrontFaceMessageMetadata server,
+  ) {
+    final merged = Map<String, dynamic>.from(local.raw);
+    for (final entry in server.raw.entries) {
+      merged[entry.key] = entry.value;
+    }
+    final localAtt = local.raw['attachment'];
+    final serverAtt = server.raw['attachment'];
+    if (localAtt is Map || serverAtt is Map) {
+      final att = <String, dynamic>{
+        if (localAtt is Map) ...Map<String, dynamic>.from(localAtt),
+        if (serverAtt is Map) ...Map<String, dynamic>.from(serverAtt),
+      };
+      att.remove('upload_status');
+      if (att.isNotEmpty) {
+        merged['attachment'] = att;
+      } else {
+        merged.remove('attachment');
+      }
+    }
+    return FrontFaceMessageMetadata(merged);
+  }
+
+  /// True when both sides share a location pin (approx) or the same media asset.
+  bool _attachmentPartsOverlap(
+    List<FrontFaceMessagePart> a,
+    List<FrontFaceMessagePart> b,
+  ) {
+    for (final left in a) {
+      for (final right in b) {
+        if (left.type != right.type) continue;
+        switch (left.type) {
+          case FrontFaceMessagePartType.location:
+            final latL = left.latitude;
+            final lngL = left.longitude;
+            final latR = right.latitude;
+            final lngR = right.longitude;
+            if (latL != null &&
+                lngL != null &&
+                latR != null &&
+                lngR != null &&
+                (latL - latR).abs() < 0.00015 &&
+                (lngL - lngR).abs() < 0.00015) {
+              return true;
+            }
+            // Incomplete server location (missing coords) while a single local
+            // location is uploading — still pair so we don't drop the bubble.
+            if (_hasSingleUploadingProvisionalOfType(
+                  FrontFaceMessagePartType.location,
+                ) &&
+                ((latL == null || lngL == null) ||
+                    (latR == null || lngR == null))) {
+              return true;
+            }
+          case FrontFaceMessagePartType.image:
+          case FrontFaceMessagePartType.audio:
+            if (left.mediaAssetId != null &&
+                left.mediaAssetId == right.mediaAssetId) {
+              return true;
+            }
+            final urlL = left.url;
+            final urlR = right.url;
+            if (urlL != null &&
+                urlR != null &&
+                urlL.isNotEmpty &&
+                urlL == urlR) {
+              return true;
+            }
+            // Newest uploading provisional of this kind ↔ server part of the
+            // same kind (only while a single upload is in flight).
+            if (_isProvisionalMedia(left) != _isProvisionalMedia(right) &&
+                _hasSingleUploadingProvisionalOfType(left.type)) {
+              return true;
+            }
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Restricts provisional↔server media matching so older history cannot
+  /// steal the in-flight local bubble.
+  bool _hasSingleUploadingProvisionalOfType(FrontFaceMessagePartType type) {
+    var count = 0;
+    for (final m in _messages) {
+      if (!m.id.startsWith('local_')) continue;
+      if (!m.isAttachmentUploading) continue;
+      if (m.parts.any((p) => p.type == type && _isProvisionalMedia(p))) {
+        count++;
+        if (count > 1) return false;
+      }
+    }
+    return count == 1;
+  }
+
+  bool _isProvisionalMedia(FrontFaceMessagePart part) {
+    if (part.localPath != null && part.localPath!.isNotEmpty) return true;
+    final url = part.url;
+    if (url == null || url.isEmpty) return part.mediaAssetId == null;
+    return !url.startsWith('http://') && !url.startsWith('https://');
+  }
+
+  void _stampLocalMediaAssetId(String localId, String assetId) {
+    final idx = _messages.indexWhere((m) => m.id == localId);
+    if (idx < 0) return;
+    final local = _messages[idx];
+    final parts = local.parts.map((p) {
+      if (p.type != FrontFaceMessagePartType.image &&
+          p.type != FrontFaceMessagePartType.audio) {
+        return p;
+      }
+      return FrontFaceMessagePart(
+        id: p.id,
+        type: p.type,
+        processingStatus: p.processingStatus,
+        position: p.position,
+        mediaAssetId: assetId,
+        url: p.url,
+        derivedText: p.derivedText,
+        payload: p.payload,
+      );
+    }).toList();
+    _messages[idx] = FrontFaceChatMessage(
+      id: local.id,
+      content: local.content,
+      senderType: local.senderType,
+      senderName: local.senderName,
+      createdAt: local.createdAt,
+      metadata: local.metadata,
+      parts: parts,
+    );
+  }
+
+  void _markLocalAttachmentSent(String localId) {
+    _patchLocalAttachmentStatus(
+      localId,
+      FrontFaceAttachmentUploadStatus.sent,
+    );
+  }
+
+  void _markLocalAttachmentFailed(String localId) {
+    _patchLocalAttachmentStatus(
+      localId,
+      FrontFaceAttachmentUploadStatus.failed,
+    );
+  }
+
+  void _patchLocalAttachmentStatus(
+    String localId,
+    FrontFaceAttachmentUploadStatus status,
+  ) {
+    final idx = _messages.indexWhere((m) => m.id == localId);
+    if (idx < 0) {
+      // Already promoted to a server id — patch newest customer attachment.
+      final fallback = _messages.lastIndexWhere(
+        (m) =>
+            m.senderType == FrontFaceSenderType.customer &&
+            m.hasParts &&
+            (m.isAttachmentUploading ||
+                m.attachment?.uploadStatus ==
+                    FrontFaceAttachmentUploadStatus.failed),
+      );
+      if (fallback < 0) return;
+      _patchAttachmentStatusAt(fallback, status);
+      return;
+    }
+    _patchAttachmentStatusAt(idx, status);
+  }
+
+  void _patchAttachmentStatusAt(
+    int idx,
+    FrontFaceAttachmentUploadStatus status,
+  ) {
+    final local = _messages[idx];
+    final raw = Map<String, dynamic>.from(local.metadata.raw);
+    final attachment = Map<String, dynamic>.from(
+      (raw['attachment'] as Map?)?.cast<String, dynamic>() ?? {},
+    );
+    if (status == FrontFaceAttachmentUploadStatus.sent) {
+      attachment.remove('upload_status');
+    } else {
+      attachment['upload_status'] = status.name;
+    }
+    if (attachment.isNotEmpty) {
+      raw['attachment'] = attachment;
+    } else {
+      raw.remove('attachment');
+    }
+    _messages[idx] = FrontFaceChatMessage(
+      id: local.id,
+      content: local.content,
+      senderType: local.senderType,
+      senderName: local.senderName,
+      createdAt: local.createdAt,
+      metadata: FrontFaceMessageMetadata(raw),
+      parts: local.parts,
+    );
   }
 
   List<Map<String, String>> _buildConversationHistory() {

@@ -1,13 +1,20 @@
 import Flutter
 import UIKit
+import GoogleMaps
 
 @main
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    GeneratedPluginRegistrant.register(with: self)
+    // Same key as AndroidManifest `com.google.android.geo.API_KEY` and the
+    // example "Google Maps API key" field (Places + Geocoding + Maps SDK).
+    GMSServices.provideAPIKey("YOUR_GOOGLE_MAPS_API_KEY")
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
   }
 }

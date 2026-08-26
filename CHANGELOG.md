@@ -1,3 +1,13 @@
+## 1.5.2
+
+* Add: optional Maps key — location sharing works with GPS-only confirm sheet when no Google Maps key is set; map picker + place search when a key is provided.
+* Add: in-app image viewer (pinch / double-tap zoom) and in-bubble voice player (`audioplayers`).
+* Add: optimistic attachment UX — show local image/audio/location immediately with full-bubble upload overlay, then promote in place when the server confirms (stable order vs agent reply).
+* Add: built-in `FrontFaceChatStrings.english` / `.arabic` / `.forLanguage()` packs; professional “Add attachment” label; bundled Noto Sans Arabic (`FrontFaceArabic`) for RTL.
+* Add: optional bubble colors documented on `FrontFaceChatTheme`; optional `showNewChatButton` on `FrontFaceChatConfig`.
+* Fix: permissions use native system prompts first; gallery Photo Picker on Android; map my-location button above confirm sheet; attachment grid overflow; location bubble surviving history merge (string coords / incomplete parts).
+* Fix: bump `record` to `^6.0.0` for iOS pod resolution.
+
 ## 1.5.1
 
 * Docs: drop redundant root markdown (`BREAKING_CHANGES`, dated changelog snapshot, `README_SDK_PACKAGE`, `SEND_*` guides). Keep `README`, `CHANGELOG`, `INTEGRATION_GUIDE`, `CHAT_HISTORY_GUIDE`, `IDENTITY_VERIFICATION_GUIDE`. Location/image/voice contracts live in `INTEGRATION_GUIDE` §5.3–5.5.

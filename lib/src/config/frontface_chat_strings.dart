@@ -2,10 +2,10 @@ import 'package:flutter/material.dart' show TextDirection;
 
 /// Localizable UI strings for the chat package.
 ///
-/// Every user-visible label has an English default. Pass only the fields you
-/// want to override — the rest keep their defaults. Use [copyWith] to tweak an
-/// existing instance (e.g. switch language at runtime via
-/// [FrontFaceChatProvider.updateStrings]).
+/// Every user-visible label has an English default. Prefer the built-in packs
+/// [english] / [arabic] (or [forLanguage]) so hosts do not re-translate every
+/// field. Override individual keys with the constructor or [copyWith] when
+/// needed. Switch language at runtime via [FrontFaceChatProvider.updateStrings].
 class FrontFaceChatStrings {
   final String online;
   final String newChat;
@@ -68,6 +68,8 @@ class FrontFaceChatStrings {
   final String sendLocation;
   final String sharedLocation;
   final String openInMaps;
+  final String searchLocationHint;
+  final String useCurrentLocation;
   final String attachPhoto;
   final String takePhoto;
   final String attachVideo;
@@ -84,6 +86,7 @@ class FrontFaceChatStrings {
   final String attachmentTooLarge;
   final String attachmentUnavailable;
   final String attachmentUploadFailed;
+  final String imageLoadFailed;
   final String locationPermissionDenied;
   final String locationServicesDisabled;
   final String locationUnavailable;
@@ -161,27 +164,30 @@ class FrontFaceChatStrings {
     this.offlineMessage = 'Message',
     this.offlineSubmit = 'Send message',
     this.offlineSuccess = 'Message sent. We will get back to you soon.',
-    this.attach = 'Attach',
+    this.attach = 'Add attachment',
     this.shareLocation = 'Share location',
     this.sendLocation = 'Send this location',
     this.sharedLocation = 'Shared location',
     this.openInMaps = 'Open in Maps',
+    this.searchLocationHint = 'Search for a place',
+    this.useCurrentLocation = 'Current location',
     this.attachPhoto = 'Photo library',
     this.takePhoto = 'Take photo',
     this.attachVideo = 'Video library',
     this.recordVideo = 'Record video',
     this.attachAudio = 'Audio file',
-    this.recordVoice = 'Record voice note',
+    this.recordVoice = 'Record voice message',
     this.startRecording = 'Start recording',
-    this.stopRecording = 'Send voice note',
+    this.stopRecording = 'Send voice message',
     this.imageAttachment = 'Image',
-    this.audioAttachment = 'Voice note',
-    this.videoAttachment = 'Video attachment',
+    this.audioAttachment = 'Voice message',
+    this.videoAttachment = 'Video',
     this.transcriptPending = 'Transcribing…',
     this.transcriptFailed = 'Transcript unavailable',
     this.attachmentTooLarge = 'That file is too large to send.',
     this.attachmentUnavailable = 'Attachment unavailable',
-    this.attachmentUploadFailed = 'Could not upload attachment. Try again.',
+    this.attachmentUploadFailed = 'Could not upload. Please try again.',
+    this.imageLoadFailed = 'Could not load image',
     this.locationPermissionDenied =
         'Location permission is required to share your position.',
     this.locationServicesDisabled =
@@ -195,13 +201,13 @@ class FrontFaceChatStrings {
         'FrontFace needs the camera to take a photo for support.',
     this.permissionPhotosTitle = 'Photo access',
     this.permissionPhotosBody =
-        'FrontFace needs photo access so you can attach an image.',
+        'FrontFace needs photo access so you can send an image.',
     this.permissionVideosTitle = 'Video access',
     this.permissionVideosBody =
-        'FrontFace needs video access so you can attach a clip.',
+        'FrontFace needs video access so you can send a clip.',
     this.permissionMicTitle = 'Microphone access',
     this.permissionMicBody =
-        'FrontFace needs the microphone to record a voice note for support.',
+        'FrontFace needs the microphone to record a voice message for support.',
     this.permissionContinue = 'Continue',
     this.permissionNotNow = 'Not now',
     this.permissionOpenSettingsBody =
@@ -211,6 +217,126 @@ class FrontFaceChatStrings {
     this.title,
     this.textDirection = TextDirection.ltr,
   });
+
+  /// English defaults (LTR). Same as `const FrontFaceChatStrings()`.
+  static const english = FrontFaceChatStrings();
+
+  /// Complete Arabic pack (RTL). Use with [forLanguage] or pass directly.
+  static const arabic = FrontFaceChatStrings(
+    textDirection: TextDirection.rtl,
+    online: 'متصل',
+    newChat: 'محادثة جديدة',
+    retry: 'إعادة المحاولة',
+    startNewChat: 'بدء محادثة جديدة',
+    beforeWeChat: 'قبل الدردشة',
+    leadFormSubtitle: 'يرجى مشاركة بياناتك لمساعدتك بشكل أفضل.',
+    continueToChat: 'متابعة إلى المحادثة',
+    email: 'البريد الإلكتروني',
+    emailRequired: 'البريد الإلكتروني مطلوب',
+    invalidEmail: 'أدخل بريداً إلكترونياً صالحاً',
+    requiredField: 'مطلوب',
+    additionalInfo: 'معلومات إضافية',
+    field2Label: 'رقم الهاتف',
+    waitingForAgent: 'بانتظار وكيل...',
+    waitingForAgentWithPosition: 'بانتظار وكيل (الترتيب {position})',
+    agentJoined: 'انضم وكيل إلى المحادثة',
+    agentHereToHelp: '{name} هنا لمساعدتك',
+    conversationEnded: 'انتهت المحادثة',
+    failedToLoadChat: 'تعذر تحميل المحادثة. حاول مرة أخرى.',
+    failedToSendMessage: 'تعذر إرسال الرسالة.',
+    failedToSubmitForm: 'تعذر إرسال النموذج.',
+    couldNotConnectAgent: 'تعذر توصيلك بوكيل.',
+    chatUnavailable: 'المحادثة غير متاحة حالياً.',
+    typeMessage: 'اكتب رسالة...',
+    talkToHuman: 'تحدث مع شخص',
+    messageCopied: 'تم النسخ إلى الحافظة',
+    loadingChat: 'جارٍ تحميل المحادثة...',
+    viewDetails: 'عرض التفاصيل',
+    ticketReferenceLabel: 'المرجع',
+    viewTicket: 'عرض التذكرة',
+    ticketFailed: 'تعذر إنشاء تذكرة دعم.',
+    csatTitle: 'كيف كانت تجربتك؟',
+    csatSubmit: 'إرسال التقييم',
+    csatThanks: 'شكراً على ملاحظاتك!',
+    offlineTitle: 'اترك لنا رسالة',
+    offlineName: 'الاسم',
+    offlineMessage: 'الرسالة',
+    offlineSubmit: 'إرسال الرسالة',
+    offlineSuccess: 'تم الإرسال. سنتواصل معك قريباً.',
+    attach: 'إضافة مرفق',
+    shareLocation: 'مشاركة الموقع',
+    sendLocation: 'إرسال هذا الموقع',
+    sharedLocation: 'موقع مشترك',
+    openInMaps: 'فتح في الخرائط',
+    searchLocationHint: 'ابحث عن مكان',
+    useCurrentLocation: 'الموقع الحالي',
+    attachPhoto: 'مكتبة الصور',
+    takePhoto: 'التقاط صورة',
+    attachVideo: 'مكتبة الفيديو',
+    recordVideo: 'تسجيل فيديو',
+    attachAudio: 'ملف صوتي',
+    recordVoice: 'تسجيل رسالة صوتية',
+    startRecording: 'بدء التسجيل',
+    stopRecording: 'إرسال الرسالة الصوتية',
+    imageAttachment: 'صورة',
+    audioAttachment: 'رسالة صوتية',
+    videoAttachment: 'فيديو',
+    transcriptPending: 'جارٍ التفريغ…',
+    transcriptFailed: 'التفريغ غير متاح',
+    attachmentTooLarge: 'هذا الملف كبير جداً للإرسال.',
+    attachmentUnavailable: 'المرفق غير متاح',
+    attachmentUploadFailed: 'تعذر الرفع. حاول مرة أخرى.',
+    imageLoadFailed: 'تعذر تحميل الصورة',
+    locationPermissionDenied: 'يلزم إذن الموقع لمشاركة موقعك.',
+    locationServicesDisabled: 'فعّل خدمات الموقع لمشاركة موقعك.',
+    locationUnavailable: 'تعذر تحديد موقعك.',
+    permissionLocationTitle: 'الوصول إلى الموقع',
+    permissionLocationBody:
+        'يحتاج FrontFace إلى موقعك لمشاركته مع الدعم.',
+    permissionCameraTitle: 'الوصول إلى الكاميرا',
+    permissionCameraBody:
+        'يحتاج FrontFace إلى الكاميرا لالتقاط صورة للدعم.',
+    permissionPhotosTitle: 'الوصول إلى الصور',
+    permissionPhotosBody:
+        'يحتاج FrontFace إلى الصور لإرسال صورة.',
+    permissionVideosTitle: 'الوصول إلى الفيديو',
+    permissionVideosBody:
+        'يحتاج FrontFace إلى الفيديو لإرسال مقطع.',
+    permissionMicTitle: 'الوصول إلى الميكروفون',
+    permissionMicBody:
+        'يحتاج FrontFace إلى الميكروفون لتسجيل رسالة صوتية للدعم.',
+    permissionContinue: 'متابعة',
+    permissionNotNow: 'ليس الآن',
+    permissionOpenSettingsBody:
+        'تم رفض الإذن. يمكنك تفعيله من الإعدادات.',
+    openSettings: 'فتح الإعدادات',
+    sessionExpired: 'انتهت جلستك. يرجى البدء من جديد.',
+    title: 'الدعم',
+  );
+
+  /// Returns a built-in pack for [languageCode] (`en`, `ar`, …).
+  ///
+  /// Unknown codes fall back to [english]. Pass optional [title] /
+  /// field labels when you need host-specific overrides on top of a pack.
+  static FrontFaceChatStrings forLanguage(
+    String languageCode, {
+    String? title,
+    String? field2Label,
+    String? field3Label,
+  }) {
+    final base = switch (languageCode.toLowerCase().split('_').first) {
+      'ar' => arabic,
+      _ => english,
+    };
+    if (title == null && field2Label == null && field3Label == null) {
+      return base;
+    }
+    return base.copyWith(
+      title: title,
+      field2Label: field2Label,
+      field3Label: field3Label,
+    );
+  }
 
   String agentHelp(String name) => agentHereToHelp.replaceAll('{name}', name);
 
@@ -222,7 +348,7 @@ class FrontFaceChatStrings {
   /// Useful for partial translations or runtime language switches:
   /// ```dart
   /// provider.updateStrings(
-  ///   strings.copyWith(attach: 'إرفاق', shareLocation: 'مشاركة الموقع'),
+  ///   FrontFaceChatStrings.arabic.copyWith(title: 'المساعدة'),
   /// );
   /// ```
   FrontFaceChatStrings copyWith({
@@ -273,6 +399,8 @@ class FrontFaceChatStrings {
     String? sendLocation,
     String? sharedLocation,
     String? openInMaps,
+    String? searchLocationHint,
+    String? useCurrentLocation,
     String? attachPhoto,
     String? takePhoto,
     String? attachVideo,
@@ -289,6 +417,7 @@ class FrontFaceChatStrings {
     String? attachmentTooLarge,
     String? attachmentUnavailable,
     String? attachmentUploadFailed,
+    String? imageLoadFailed,
     String? locationPermissionDenied,
     String? locationServicesDisabled,
     String? locationUnavailable,
@@ -358,6 +487,8 @@ class FrontFaceChatStrings {
       sendLocation: sendLocation ?? this.sendLocation,
       sharedLocation: sharedLocation ?? this.sharedLocation,
       openInMaps: openInMaps ?? this.openInMaps,
+      searchLocationHint: searchLocationHint ?? this.searchLocationHint,
+      useCurrentLocation: useCurrentLocation ?? this.useCurrentLocation,
       attachPhoto: attachPhoto ?? this.attachPhoto,
       takePhoto: takePhoto ?? this.takePhoto,
       attachVideo: attachVideo ?? this.attachVideo,
@@ -376,6 +507,7 @@ class FrontFaceChatStrings {
           attachmentUnavailable ?? this.attachmentUnavailable,
       attachmentUploadFailed:
           attachmentUploadFailed ?? this.attachmentUploadFailed,
+      imageLoadFailed: imageLoadFailed ?? this.imageLoadFailed,
       locationPermissionDenied:
           locationPermissionDenied ?? this.locationPermissionDenied,
       locationServicesDisabled:

@@ -27,7 +27,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.5.1
+  frontface_chat: ^1.5.2
 ```
 
 For local development (this repo lives next to your app):
@@ -178,7 +178,8 @@ final config = FrontFaceChatConfig(
     enableLocation: true,
     enableImages: true,
     enableAudio: true,
-    // Required when enableLocation is true (map picker + static previews).
+    // Optional — with a key: map picker + place search + static previews.
+    // Without a key: user can still share current GPS location.
     googleMapsApiKey: 'YOUR_GOOGLE_MAPS_API_KEY',
   ),
 );
@@ -188,33 +189,77 @@ See `INTEGRATION_GUIDE.md` §5.3–5.5 for the location / image / voice API cont
 
 **Native setup (host app):**
 
-- **Android** `AndroidManifest.xml`: location / camera / media / mic permissions, and
-  `com.google.android.geo.API_KEY` meta-data with the same Maps key.
+- **Android** `AndroidManifest.xml`: location / camera / mic permissions. If you
+  use a Maps key, also add `com.google.android.geo.API_KEY` and enable
+  **Maps SDK**, **Places API**, and **Geocoding API** on that key.
+  Gallery uses the system Photo Picker (no `READ_MEDIA_IMAGES` required for picking).
 - **iOS** `Info.plist`: `NSLocationWhenInUseUsageDescription`,
   `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`,
-  `NSMicrophoneUsageDescription`, and set the Maps key via
+  `NSMicrophoneUsageDescription`. With a Maps key, call
   `GMSServices.provideAPIKey` in `AppDelegate`.
+- **iOS Podfile** — enable `permission_handler` macros or every request looks
+  permanently denied (open Settings loop):
 
-Permissions are requested only when the user taps an attachment action, with an
-in-app rationale first. If permanently denied, the SDK offers to open Settings.
+```ruby
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
+        '$(inherited)',
+        'PERMISSION_CAMERA=1',
+        'PERMISSION_PHOTOS=1',
+        'PERMISSION_MICROPHONE=1',
+        'PERMISSION_LOCATION=1',
+      ]
+    end
+  end
+end
+```
+
+Then run `cd ios && pod install`.
+
+Permissions use the **native** system dialog. An in-app popup appears only if access
+is permanently denied (to open Settings) or location services are off.
 
 ### Theme
 
-Match chat colors to your brand:
+Match chat colors to your brand. Bubble colors are **optional** — override only
+what you need:
 
 ```dart
 await FrontFaceChat.open(
   context,
   config: config,
   theme: const FrontFaceChatTheme(
-    primaryColor: Color(0xFF000000),
-    userBubbleColor: Color(0xFF000000),
+    primaryColor: Color(0xFF0F172A),
+    // Optional — visitor (user) bubbles
+    userBubbleColor: Color(0xFF2563EB),
+    userBubbleTextColor: Colors.white,
+    // Optional — agent / assistant bubbles
+    assistantBubbleColor: Colors.white,
+    assistantBubbleTextColor: Color(0xFF0F172A),
+    assistantBubbleBorderColor: Color(0xFFE2E8F0),
     onlineIndicatorColor: Color(0xFF17B26A),
   ),
 );
 ```
 
-Available theme properties: `primaryColor`, `onPrimaryColor`, `backgroundColor`, `inputBackgroundColor`, bubble colors, `subtitleColor`, `errorColor`, `onlineIndicatorColor`, `agentNameColor`.
+Available theme properties: `primaryColor`, `onPrimaryColor`, `backgroundColor`,
+`inputBackgroundColor`, `userBubbleColor`, `userBubbleTextColor`,
+`assistantBubbleColor`, `assistantBubbleTextColor`, `assistantBubbleBorderColor`,
+`subtitleColor`, `errorColor`, `onlineIndicatorColor`, `agentNameColor`, `linkColor`,
+`fontFamily`, `arabicFontFamily`.
+
+For Arabic / RTL (`FrontFaceChatStrings.arabic`), the SDK uses the bundled
+**Noto Sans Arabic** family (`FrontFaceArabic`) by default. Override if needed:
+
+```dart
+theme: FrontFaceChatTheme(
+  arabicFontFamily: 'FrontFaceArabic', // default
+  // fontFamily: 'YourLatinFont',       // optional LTR font
+),
+```
 
 ### Bottom safe area / host bottom navigation
 
@@ -234,32 +279,38 @@ FrontFaceChatScreen(theme: theme, extraBottomInset: 80);
 
 ### Strings (i18n) and RTL
 
-Every user-visible label (including **attachments**, permissions, tickets, CSAT,
-and the offline form) lives on [FrontFaceChatStrings] with English defaults.
-Pass only the fields you want to translate — the rest stay optional/default:
+Every user-visible label (attachments, permissions, tickets, CSAT, offline form,
+image viewer, etc.) lives on [FrontFaceChatStrings]. Prefer the built-in packs
+so you do not re-translate every field:
 
 ```dart
-const arabicStrings = FrontFaceChatStrings(
-  textDirection: TextDirection.rtl,
-  online: 'متصل',
-  typeMessage: 'اكتب رسالة...',
-  talkToHuman: 'تحدث مع شخص',
-  // Attachments (only needed if you enabled them in config)
-  attach: 'إرفاق',
-  shareLocation: 'مشاركة الموقع',
-  sendLocation: 'إرسال هذا الموقع',
-  attachPhoto: 'مكتبة الصور',
-  takePhoto: 'التقاط صورة',
-  permissionLocationTitle: 'الوصول إلى الموقع',
-  permissionContinue: 'متابعة',
-  openSettings: 'فتح الإعدادات',
-  title: 'الدعم',
-);
+// English (default)
+await FrontFaceChat.open(context, config: config);
 
+// Full Arabic pack (RTL + all labels)
 await FrontFaceChat.open(
   context,
   config: config,
-  strings: arabicStrings,
+  strings: FrontFaceChatStrings.arabic,
+);
+
+// Or resolve from a language code (`en`, `ar`, …)
+await FrontFaceChat.open(
+  context,
+  config: config,
+  strings: FrontFaceChatStrings.forLanguage(
+    Localizations.localeOf(context).languageCode,
+    title: 'Support', // optional override
+  ),
+);
+```
+
+Override individual keys when needed:
+
+```dart
+final strings = FrontFaceChatStrings.arabic.copyWith(
+  attach: 'إضافة مرفق',
+  title: 'المساعدة',
 );
 ```
 
@@ -267,7 +318,7 @@ Partial updates at runtime:
 
 ```dart
 provider.updateStrings(
-  provider.strings.copyWith(attach: 'إرفاق', shareLocation: 'مشاركة الموقع'),
+  FrontFaceChatStrings.forLanguage('ar').copyWith(title: 'الدعم'),
 );
 ```
 
@@ -293,7 +344,7 @@ in settings), call `updateStrings()` on the provider you're using with `createPr
 or `context.read<FrontFaceChatProvider>()`:
 
 ```dart
-provider.updateStrings(arabicStrings);
+provider.updateStrings(FrontFaceChatStrings.forLanguage('ar'));
 ```
 
 This swaps every string immediately — title, placeholder, input direction, and any
@@ -302,25 +353,23 @@ language without recreating the provider or screen.
 
 ### Debug logging
 
-Enable HTTP request logs during development:
+Enable HTTP request logs during **debug builds only**:
 
 ```dart
 const config = FrontFaceChatConfig(
   projectId: '...',
   publishableKey: 'pk_...',
-  debugLogging: true,
+  debugLogging: true, // ignored in release/profile — never logs in production
 );
 ```
 
-## Configuration reference
+Secrets (`X-FrontFace-Key`, session tokens) are redacted from curl logs. Leave
+`debugLogging: false` (the default) in production configs.
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `projectId` | Yes | Project UUID from FrontFace dashboard |
-| `publishableKey` | Yes | Mobile SDK key (`pk_…`) |
-| `baseUrl` | No | API base URL (default: `https://api.frontface.app`) |
-| `debugLogging` | No | Log API requests to console |
+| Option | Required | Notes |
+|--------|----------|--------|
 | `requireLeadCaptureBeforeChat` | No | Defaults to `true`: show the lead form before any greeting or session. Set `false` to follow the dashboard `capture_mode` instead. See [Lead capture timing](#lead-capture-timing). |
+| `showNewChatButton` | No | Defaults to `true`. Set `false` to hide the app-bar refresh / new-chat button. |
 
 ## Lead capture timing
 

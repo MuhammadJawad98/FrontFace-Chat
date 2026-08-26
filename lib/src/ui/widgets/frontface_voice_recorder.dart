@@ -27,6 +27,7 @@ class FrontFaceVoiceRecorderSheet {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
+      backgroundColor: Colors.white,
       builder: (ctx) => _VoiceRecorderBody(
         theme: theme,
         strings: strings,

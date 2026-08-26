@@ -8,15 +8,18 @@ void main() {
       FrontFaceAttachmentsConfig.disabled.validate();
     });
 
-    test('location requires googleMapsApiKey', () {
+    test('location does not require googleMapsApiKey', () {
+      const FrontFaceAttachmentsConfig(enableLocation: true).validate();
       expect(
-        () => const FrontFaceAttachmentsConfig(enableLocation: true).validate(),
-        throwsArgumentError,
+        const FrontFaceAttachmentsConfig(enableLocation: true).hasMapsKey,
+        isFalse,
       );
-      const FrontFaceAttachmentsConfig(
+      const withKey = FrontFaceAttachmentsConfig(
         enableLocation: true,
         googleMapsApiKey: 'AIza-test',
-      ).validate();
+      );
+      withKey.validate();
+      expect(withKey.hasMapsKey, isTrue);
     });
 
     test('media does not require host uploader', () {
@@ -26,6 +29,16 @@ void main() {
   });
 
   group('FrontFaceAttachmentPayload', () {
+    test('toMetadata includes upload_status for optimistic bubbles', () {
+      const payload = FrontFaceAttachmentPayload(
+        kind: FrontFaceAttachmentKind.audio,
+        url: '/tmp/a.mp3',
+        uploadStatus: FrontFaceAttachmentUploadStatus.uploading,
+      );
+      expect(payload.toMetadata()['attachment']['upload_status'], 'uploading');
+      expect(payload.isUploading, isTrue);
+    });
+
     test('location message content includes maps URL', () {
       const payload = FrontFaceAttachmentPayload(
         kind: FrontFaceAttachmentKind.location,
@@ -115,6 +128,21 @@ void main() {
       expect(locationMsg.parts.single.type, FrontFaceMessagePartType.location);
       expect(locationMsg.attachment?.latitude, 24.7136);
       expect(locationMsg.attachment?.label, 'Al Olaya');
+
+      final stringCoords = FrontFaceChatMessage.fromJson({
+        'id': 'm1b',
+        'content': '',
+        'senderType': 'customer',
+        'createdAt': '2026-08-24T18:20:00Z',
+        'parts': [
+          {
+            'type': 'location',
+            'payload': {'latitude': '25.1', 'longitude': '55.2'},
+          },
+        ],
+      });
+      expect(stringCoords.attachment?.latitude, 25.1);
+      expect(stringCoords.attachment?.longitude, 55.2);
 
       final imageMsg = FrontFaceChatMessage.fromJson({
         'id': 'm2',

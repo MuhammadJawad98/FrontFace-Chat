@@ -1,16 +1,39 @@
 import 'package:flutter/material.dart';
 
+/// Bundled Noto Sans Arabic family (used automatically for RTL / Arabic UI).
+const kFrontFaceArabicFontFamily = 'FrontFaceArabic';
+
 /// Visual styling for the chat UI. Override any field to match your app.
+///
+/// Bubble colors are **optional** — omit them to keep the defaults:
+/// - User (visitor): [userBubbleColor] / [userBubbleTextColor]
+/// - Agent / assistant: [assistantBubbleColor] / [assistantBubbleTextColor]
+///
+/// Typography:
+/// - [fontFamily] — optional Latin / default UI font
+/// - [arabicFontFamily] — used when chat [TextDirection] is RTL (defaults to
+///   the bundled [kFrontFaceArabicFontFamily] Noto Sans Arabic)
 class FrontFaceChatTheme {
   final Color primaryColor;
   final Color onPrimaryColor;
   final Color backgroundColor;
   final Color inputBackgroundColor;
+
+  /// Background of visitor (user) message bubbles. Optional — defaults to black.
   final Color userBubbleColor;
+
+  /// Text / icon color inside visitor bubbles. Optional — defaults to white.
   final Color userBubbleTextColor;
+
+  /// Background of agent / assistant message bubbles. Optional — defaults to white.
   final Color assistantBubbleColor;
+
+  /// Text / icon color inside agent / assistant bubbles. Optional.
   final Color assistantBubbleTextColor;
+
+  /// Border around agent / assistant bubbles. Optional.
   final Color assistantBubbleBorderColor;
+
   final Color subtitleColor;
   final Color errorColor;
   final Color onlineIndicatorColor;
@@ -21,6 +44,16 @@ class FrontFaceChatTheme {
   /// [primaryColor] is often black/brand-colored and wouldn't read as a
   /// tappable link.
   final Color linkColor;
+
+  /// Optional font for LTR / default UI copy. When null, inherits the host
+  /// app theme.
+  final String? fontFamily;
+
+  /// Font used when the chat is RTL (Arabic pack). Defaults to the bundled
+  /// [kFrontFaceArabicFontFamily]. Set to another family registered in the
+  /// host app, or `null` only if you pass an empty override via [copyWith]
+  /// clearing — prefer leaving the default so Arabic glyphs render correctly.
+  final String? arabicFontFamily;
 
   const FrontFaceChatTheme({
     this.primaryColor = const Color(0xFF000000),
@@ -37,7 +70,38 @@ class FrontFaceChatTheme {
     this.onlineIndicatorColor = const Color(0xFF17B26A),
     this.agentNameColor = const Color(0xFFF76E26),
     this.linkColor = const Color(0xFF2563EB),
+    this.fontFamily,
+    this.arabicFontFamily = kFrontFaceArabicFontFamily,
   });
+
+  /// Resolves the font for the active chat direction.
+  String? resolvedFontFamily(TextDirection textDirection) {
+    if (textDirection == TextDirection.rtl) {
+      return arabicFontFamily ?? fontFamily;
+    }
+    return fontFamily;
+  }
+
+  /// Builds a [TextStyle] that includes the resolved font for [textDirection].
+  TextStyle textStyle(
+    TextDirection textDirection, {
+    Color? color,
+    double? fontSize,
+    FontWeight? fontWeight,
+    double? height,
+    TextDecoration? decoration,
+    Color? decorationColor,
+  }) {
+    return TextStyle(
+      fontFamily: resolvedFontFamily(textDirection),
+      color: color,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      height: height,
+      decoration: decoration,
+      decorationColor: decorationColor,
+    );
+  }
 
   FrontFaceChatTheme copyWith({
     Color? primaryColor,
@@ -54,6 +118,10 @@ class FrontFaceChatTheme {
     Color? onlineIndicatorColor,
     Color? agentNameColor,
     Color? linkColor,
+    String? fontFamily,
+    String? arabicFontFamily,
+    bool clearFontFamily = false,
+    bool clearArabicFontFamily = false,
   }) {
     return FrontFaceChatTheme(
       primaryColor: primaryColor ?? this.primaryColor,
@@ -72,6 +140,10 @@ class FrontFaceChatTheme {
       onlineIndicatorColor: onlineIndicatorColor ?? this.onlineIndicatorColor,
       agentNameColor: agentNameColor ?? this.agentNameColor,
       linkColor: linkColor ?? this.linkColor,
+      fontFamily: clearFontFamily ? null : (fontFamily ?? this.fontFamily),
+      arabicFontFamily: clearArabicFontFamily
+          ? null
+          : (arabicFontFamily ?? this.arabicFontFamily),
     );
   }
 }

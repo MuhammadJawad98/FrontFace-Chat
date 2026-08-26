@@ -12,13 +12,17 @@ class FrontFaceApiManager {
 
   final FrontFaceChatConfig config;
 
+  /// Never logs in release/profile builds — even if [FrontFaceChatConfig.debugLogging]
+  /// is accidentally left `true` in production.
+  bool get _canLog => kDebugMode && config.debugLogging;
+
   Map<String, String> _headers(String visitorId, {String? sessionToken}) => {
-    'Content-Type': 'application/json',
-    'X-FrontFace-Key': config.publishableKey,
-    'X-Visitor-Id': visitorId,
-    if (sessionToken != null && sessionToken.isNotEmpty)
-      'X-FrontFace-Session': sessionToken,
-  };
+        'Content-Type': 'application/json',
+        'X-FrontFace-Key': config.publishableKey,
+        'X-Visitor-Id': visitorId,
+        if (sessionToken != null && sessionToken.isNotEmpty)
+          'X-FrontFace-Session': sessionToken,
+      };
 
   String _url(String path) => '${config.baseUrl}$path';
 
@@ -94,7 +98,8 @@ class FrontFaceApiManager {
     required List<int> bytes,
     required String contentType,
   }) async {
-    _log('PUT (${bytes.length} bytes, $contentType): $uploadUrl');
+    // Never log the signed upload URL (contains tokens in query string).
+    _log('PUT (${bytes.length} bytes, $contentType)');
     try {
       final response = await http.put(
         Uri.parse(uploadUrl),
@@ -151,7 +156,8 @@ class FrontFaceApiManager {
   }
 
   void _log(String message) {
-    if (config.debugLogging) debugPrint('[FrontFace] $message');
+    if (!_canLog) return;
+    debugPrint('[FrontFace] $message');
   }
 
   void _logCurl(
@@ -160,8 +166,19 @@ class FrontFaceApiManager {
     Map<String, String> headers, {
     Map<String, dynamic>? body,
   }) {
-    if (!config.debugLogging) return;
-    final headerStrings = headers.entries
+    if (!_canLog) return;
+    // Redact secrets so even debug console dumps aren't copy-pasteable credentials.
+    final safeHeaders = headers.map((key, value) {
+      final lower = key.toLowerCase();
+      if (lower.contains('key') ||
+          lower.contains('session') ||
+          lower.contains('authorization') ||
+          lower.contains('token')) {
+        return MapEntry(key, '***');
+      }
+      return MapEntry(key, value);
+    });
+    final headerStrings = safeHeaders.entries
         .map((e) => '-H "${e.key}: ${e.value}"')
         .join(' ');
     final bodyString = body != null

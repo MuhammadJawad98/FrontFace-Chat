@@ -102,7 +102,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
 
   void _onProviderUpdate() {
     final count = _provider.messages.length;
-    final sending = _provider.isSending;
+    final sending = _provider.showTypingIndicator;
     final agentTyping = _provider.agentTyping;
     final changed = count != _lastMessageCount ||
         sending != _lastSending ||
@@ -148,10 +148,25 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
     // every provider change, including a runtime FrontFaceChatStrings swap
     // via updateStrings(), so Directionality and icon mirroring stay live.
     context.watch<FrontFaceChatProvider>();
-    final isRtl = _strings.textDirection == TextDirection.rtl;
+    final textDirection = _strings.textDirection;
+    final isRtl = textDirection == TextDirection.rtl;
+    final fontFamily = widget.theme.resolvedFontFamily(textDirection);
+    final baseTheme = Theme.of(context);
+    final chatTheme = fontFamily == null
+        ? baseTheme
+        : baseTheme.copyWith(
+            textTheme: baseTheme.textTheme.apply(fontFamily: fontFamily),
+            primaryTextTheme:
+                baseTheme.primaryTextTheme.apply(fontFamily: fontFamily),
+          );
+
     return Directionality(
-      textDirection: _strings.textDirection,
-      child: Scaffold(
+      textDirection: textDirection,
+      child: Theme(
+        data: chatTheme,
+        child: DefaultTextStyle.merge(
+          style: TextStyle(fontFamily: fontFamily),
+          child: Scaffold(
         backgroundColor: widget.theme.backgroundColor,
         appBar: AppBar(
           elevation: 0,
@@ -222,6 +237,9 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
           actions: [
             Consumer<FrontFaceChatProvider>(
               builder: (context, provider, _) {
+                if (!provider.showNewChatButton) {
+                  return const SizedBox.shrink();
+                }
                 if (provider.messages.isEmpty) return const SizedBox.shrink();
                 return IconButton(
                   tooltip: _strings.newChat,
@@ -324,13 +342,10 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                           itemCount:
                               provider.messages.length +
-                              (provider.isSending || provider.agentTyping
-                                  ? 1
-                                  : 0),
+                              (provider.showTypingIndicator ? 1 : 0),
                           itemBuilder: (context, index) {
                             // index 0 is the bottom of the chat.
-                            final showTyping = provider.isSending ||
-                                provider.agentTyping;
+                            final showTyping = provider.showTypingIndicator;
                             if (showTyping && index == 0) {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
@@ -431,6 +446,8 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
               ],
             );
           },
+        ),
+      ),
         ),
       ),
     );

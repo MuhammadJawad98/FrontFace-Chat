@@ -88,15 +88,43 @@ class FrontFaceChatMessage {
 
   /// Prefer server [parts]; fall back to legacy text/metadata parse.
   FrontFaceAttachmentPayload? get attachment {
+    FrontFaceAttachmentPayload? mapped;
     for (final part in parts) {
-      final mapped = part.toAttachmentPayload();
-      if (mapped != null) return mapped;
+      mapped = part.toAttachmentPayload();
+      if (mapped != null) break;
     }
-    return FrontFaceAttachmentPayload.tryParse(
+    mapped ??= FrontFaceAttachmentPayload.tryParse(
       content: content,
       metadata: metadata.raw,
     );
+    if (mapped == null) return null;
+
+    // Merge client upload status from metadata (optimistic bubbles).
+    final raw = metadata.raw['attachment'];
+    if (raw is Map && mapped.uploadStatus == null) {
+      final status = raw['upload_status']?.toString();
+      if (status == 'uploading') {
+        return mapped.copyWith(
+          uploadStatus: FrontFaceAttachmentUploadStatus.uploading,
+        );
+      }
+      if (status == 'failed') {
+        return mapped.copyWith(
+          uploadStatus: FrontFaceAttachmentUploadStatus.failed,
+        );
+      }
+      if (status == 'sent') {
+        return mapped.copyWith(
+          uploadStatus: FrontFaceAttachmentUploadStatus.sent,
+        );
+      }
+    }
+    return mapped;
   }
+
+  /// True while a local attachment is still uploading to FrontFace.
+  bool get isAttachmentUploading =>
+      attachment?.uploadStatus == FrontFaceAttachmentUploadStatus.uploading;
 
   factory FrontFaceChatMessage.fromJson(Map<String, dynamic> json) {
     final content = json['content']?.toString() ?? '';
@@ -236,11 +264,17 @@ class FrontFaceMessagePart {
     );
   }
 
-  double? get latitude => (payload['latitude'] as num?)?.toDouble();
-  double? get longitude => (payload['longitude'] as num?)?.toDouble();
+  double? get latitude => _coord(payload['latitude'] ?? payload['lat']);
+  double? get longitude => _coord(payload['longitude'] ?? payload['lng']);
   String? get label => payload['label']?.toString() ?? derivedText;
   int? get durationMs => payload['duration_ms'] as int?;
   String? get localPath => payload['local_path']?.toString();
+
+  static double? _coord(Object? value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value.trim());
+    return null;
+  }
 
   FrontFaceAttachmentPayload? toAttachmentPayload() {
     switch (type) {

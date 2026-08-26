@@ -24,6 +24,7 @@ export 'src/ui/widgets/frontface_offline_form.dart';
 export 'src/ui/widgets/frontface_ticket_card.dart';
 export 'src/ui/widgets/frontface_attachment_sheet.dart';
 export 'src/ui/widgets/frontface_attachment_card.dart';
+export 'src/ui/widgets/frontface_image_viewer.dart';
 export 'src/ui/widgets/frontface_location_picker.dart';
 
 /// Entry point for opening FrontFace chat in your Flutter app.

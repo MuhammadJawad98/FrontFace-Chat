@@ -8,86 +8,11 @@ void main() {
 
 enum ExampleLanguage { english, arabic }
 
-const _englishStrings = FrontFaceChatStrings(
-  field2Label: 'Phone Number',
-  viewDetails: 'View Details',
-);
+FrontFaceChatStrings get _englishStrings => FrontFaceChatStrings.english.copyWith(
+      field2Label: 'Phone Number',
+    );
 
-const _arabicStrings = FrontFaceChatStrings(
-  textDirection: TextDirection.rtl,
-  online: 'متصل',
-  newChat: 'محادثة جديدة',
-  retry: 'إعادة المحاولة',
-  startNewChat: 'بدء محادثة جديدة',
-  beforeWeChat: 'قبل الدردشة',
-  leadFormSubtitle: 'يرجى مشاركة بياناتك لمساعدتك بشكل أفضل.',
-  continueToChat: 'متابعة',
-  email: 'البريد الإلكتروني',
-  emailRequired: 'البريد الإلكتروني مطلوب',
-  invalidEmail: 'أدخل بريداً إلكترونياً صالحاً',
-  requiredField: 'مطلوب',
-  field2Label: 'رقم الهاتف',
-  typeMessage: 'اكتب رسالة...',
-  talkToHuman: 'تحدث مع شخص',
-  loadingChat: 'جارٍ تحميل المحادثة...',
-  messageCopied: 'تم النسخ',
-  viewDetails: 'عرض التفاصيل',
-  title: 'الدعم',
-  waitingForAgent: 'بانتظار وكيل...',
-  conversationEnded: 'انتهت المحادثة',
-  failedToLoadChat: 'تعذر تحميل المحادثة. حاول مرة أخرى.',
-  failedToSendMessage: 'تعذر إرسال الرسالة.',
-  failedToSubmitForm: 'تعذر إرسال النموذج.',
-  ticketReferenceLabel: 'المرجع',
-  viewTicket: 'عرض التذكرة',
-  ticketFailed: 'تعذر إنشاء تذكرة دعم.',
-  csatTitle: 'كيف كانت تجربتك؟',
-  csatSubmit: 'إرسال التقييم',
-  csatThanks: 'شكراً على ملاحظاتك!',
-  offlineTitle: 'اترك لنا رسالة',
-  offlineName: 'الاسم',
-  offlineMessage: 'الرسالة',
-  offlineSubmit: 'إرسال الرسالة',
-  offlineSuccess: 'تم الإرسال. سنتواصل معك قريباً.',
-  // Attachments
-  attach: 'إرفاق',
-  shareLocation: 'مشاركة الموقع',
-  sendLocation: 'إرسال هذا الموقع',
-  sharedLocation: 'موقع مشترك',
-  openInMaps: 'فتح في الخرائط',
-  attachPhoto: 'مكتبة الصور',
-  takePhoto: 'التقاط صورة',
-  attachAudio: 'ملف صوتي',
-  recordVoice: 'تسجيل رسالة صوتية',
-  startRecording: 'بدء التسجيل',
-  stopRecording: 'إرسال الرسالة الصوتية',
-  imageAttachment: 'صورة',
-  audioAttachment: 'رسالة صوتية',
-  transcriptPending: 'جارٍ التفريغ…',
-  transcriptFailed: 'التفريغ غير متاح',
-  attachmentTooLarge: 'هذا الملف كبير جداً للإرسال.',
-  attachmentUnavailable: 'المرفق غير متاح',
-  attachmentUploadFailed: 'تعذر رفع المرفق. حاول مرة أخرى.',
-  locationPermissionDenied: 'يلزم إذن الموقع لمشاركة موقعك.',
-  locationServicesDisabled: 'فعّل خدمات الموقع لمشاركة موقعك.',
-  locationUnavailable: 'تعذر تحديد موقعك.',
-  permissionLocationTitle: 'الوصول إلى الموقع',
-  permissionLocationBody:
-      'يحتاج FrontFace إلى موقعك لمشاركته مع الدعم.',
-  permissionCameraTitle: 'الوصول إلى الكاميرا',
-  permissionCameraBody:
-      'يحتاج FrontFace إلى الكاميرا لالتقاط صورة للدعم.',
-  permissionPhotosTitle: 'الوصول إلى الصور',
-  permissionPhotosBody: 'يحتاج FrontFace إلى الصور لإرفاق صورة.',
-  permissionMicTitle: 'الوصول إلى الميكروفون',
-  permissionMicBody:
-      'يحتاج FrontFace إلى الميكروفون لتسجيل رسالة صوتية للدعم.',
-  permissionContinue: 'متابعة',
-  permissionNotNow: 'ليس الآن',
-  permissionOpenSettingsBody:
-      'تم رفض الإذن. يمكنك تفعيله من الإعدادات.',
-  openSettings: 'فتح الإعدادات',
-);
+FrontFaceChatStrings get _arabicStrings => FrontFaceChatStrings.arabic;
 
 class ExampleApp extends StatelessWidget {
   const ExampleApp({super.key});
@@ -115,6 +40,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _projectIdController = TextEditingController();
   final _publishableKeyController = TextEditingController();
+  final _mapsKeyController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   String? _debugStatus;
   ExampleLanguage _language = ExampleLanguage.english;
@@ -130,14 +56,26 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _projectIdController.dispose();
     _publishableKeyController.dispose();
+    _mapsKeyController.dispose();
     super.dispose();
   }
 
   FrontFaceChatConfig? _buildConfig() {
     if (!_formKey.currentState!.validate()) return null;
+    final mapsKey = _mapsKeyController.text.trim();
+    final hasMapsKey =
+        mapsKey.isNotEmpty && mapsKey != 'YOUR_GOOGLE_MAPS_API_KEY';
     return FrontFaceChatConfig(
       projectId: _projectIdController.text.trim(),
       publishableKey: _publishableKeyController.text.trim(),
+      // Attachments are off by default in the SDK — enable them here for demos.
+      // Maps key is optional: with a key → map picker; without → GPS share only.
+      attachments: FrontFaceAttachmentsConfig(
+        enableLocation: true,
+        enableImages: true,
+        enableAudio: true,
+        googleMapsApiKey: hasMapsKey ? mapsKey : null,
+      ),
     );
   }
 
@@ -264,8 +202,7 @@ class _HomePageState extends State<HomePage> {
                     hintText: 'pk_...',
                     border: const OutlineInputBorder(),
                   ),
-                  textInputAction: TextInputAction.done,
-                  onFieldSubmitted: (_) => _openChat(),
+                  textInputAction: TextInputAction.next,
                   validator: (value) {
                     final trimmed = value?.trim() ?? '';
                     if (trimmed.isEmpty) {
@@ -281,6 +218,25 @@ class _HomePageState extends State<HomePage> {
                     return null;
                   },
                 ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _mapsKeyController,
+                  decoration: InputDecoration(
+                    labelText: _isArabic
+                        ? 'مفتاح Google Maps (اختياري)'
+                        : 'Google Maps API key (optional)',
+                    hintText: 'AIza… (optional — map + place search)',
+                    border: const OutlineInputBorder(),
+                    helperText: _isArabic
+                        ? 'بدون مفتاح: مشاركة GPS فقط. مع مفتاح: خريطة وبحث — '
+                            'يجب وضع نفس المفتاح أيضاً في AppDelegate و AndroidManifest ثم إعادة البناء.'
+                        : 'No key → GPS share only. With a key → map + search — '
+                            'also set the same key in AppDelegate & AndroidManifest, then rebuild.',
+                    helperMaxLines: 4,
+                  ),
+                  textInputAction: TextInputAction.done,
+                  onFieldSubmitted: (_) => _openChat(),
+                ),
                 const SizedBox(height: 28),
                 ElevatedButton(
                   onPressed: () => _openChat(),
@@ -292,6 +248,10 @@ class _HomePageState extends State<HomePage> {
                     theme: const FrontFaceChatTheme(
                       primaryColor: Color(0xFF2563EB),
                       userBubbleColor: Color(0xFF2563EB),
+                      userBubbleTextColor: Colors.white,
+                      assistantBubbleColor: Color(0xFFEFF6FF),
+                      assistantBubbleTextColor: Color(0xFF1E3A8A),
+                      assistantBubbleBorderColor: Color(0xFFBFDBFE),
                     ),
                   ),
                   child: Text(

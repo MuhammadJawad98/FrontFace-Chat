@@ -16,7 +16,12 @@ class FrontFaceChatConfig {
   /// API base URL. Defaults to production.
   final String baseUrl;
 
-  /// Enable debug curl logs in the console.
+  /// Enable debug console logs (curl + responses). Defaults to `false`.
+  ///
+  /// Logs are **never** emitted in release/profile builds (`kDebugMode` gate),
+  /// even if this is set to `true` — so production cannot leak keys, session
+  /// tokens, or signed upload URLs via the terminal. Use only while debugging
+  /// a local/dev build.
   final bool debugLogging;
 
   /// Shows the lead-capture form (email/phone/etc.) before the first
@@ -44,12 +49,18 @@ class FrontFaceChatConfig {
   /// never the raw user id. Leave null for anonymous / device-scoped chats.
   final String? visitorId;
 
+  /// Shows the app-bar refresh (“new chat”) button. Defaults to `true`.
+  ///
+  /// Set to `false` to hide it when the host app starts sessions itself or
+  /// does not want users to reset the conversation from chat.
+  final bool showNewChatButton;
+
   /// Optional attachments (location / images / voice). Defaults off.
   ///
   /// See [FrontFaceAttachmentsConfig]. Image and voice upload use FrontFace
-  /// signed URLs — no host uploader required. When location is enabled you
-  /// must supply [FrontFaceAttachmentsConfig.googleMapsApiKey] (and the same
-  /// key in the host Android/iOS native projects).
+  /// signed URLs — no host uploader required. [FrontFaceAttachmentsConfig.googleMapsApiKey]
+  /// is optional: with a key you get the map picker + previews; without it,
+  /// location still shares the device GPS pin.
   final FrontFaceAttachmentsConfig attachments;
 
   const FrontFaceChatConfig({
@@ -59,6 +70,7 @@ class FrontFaceChatConfig {
     this.debugLogging = false,
     this.requireLeadCaptureBeforeChat = true,
     this.visitorId,
+    this.showNewChatButton = true,
     this.attachments = FrontFaceAttachmentsConfig.disabled,
   });
 }
