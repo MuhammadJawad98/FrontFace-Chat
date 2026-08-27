@@ -210,15 +210,20 @@ class FrontFaceAttachmentSheet {
     required FrontFaceChatStrings strings,
     required Future<void> Function(FrontFacePendingAttachment pending) onMedia,
   }) async {
-    final file = await FilePicker.pickFile(
+    // Stay on file_picker 11.x: v12 pulls android_file_picker (Flutter ≥3.38)
+    // and breaks many host Android release builds. v11 uses static pickFiles.
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'webm'],
+      withData: false,
     );
-    if (file == null) return;
+    final files = result?.files;
+    if (files == null || files.isEmpty) return;
+    final file = files.first;
     final path = file.path;
     if (path == null) return;
 
-    final length = await file.length();
+    final length = file.size;
     if (length > attachments.maxAudioBytes) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

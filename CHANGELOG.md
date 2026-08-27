@@ -1,3 +1,8 @@
+## 1.5.5
+
+* Fix: pin `file_picker` to `>=11.0.0 <12.0.0` so hosts do not pull federated `android_file_picker` from v12 (breaks many Android release builds / requires Flutter ≥3.38).
+* Chore: cap `geolocator` `<14.0.3` and `package_info_plus` `<10.0.0` so they resolve with `file_picker` 11 (`win32` 5.x).
+
 ## 1.5.4
 
 * Fix: existing voice notes no longer remount and flash a loader when a new message is sent (stable message keys + silent background prepare).
