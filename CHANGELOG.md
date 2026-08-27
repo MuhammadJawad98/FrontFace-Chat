@@ -1,3 +1,10 @@
+## 1.5.3
+
+* Fix: enable Android Photo Picker inside the SDK before gallery pick so hosts do not need `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` or a manual `useAndroidPhotoPicker` setup (Play photo & video policy).
+* Fix: example AndroidManifest no longer declares `READ_MEDIA_*` / legacy storage permissions for gallery.
+* Fix: audio upload shows loader on the play button only (no full-bubble grey overlay); lighter image/location upload overlays; black “Not now” sheet actions.
+* Chore: bump direct dependencies to current latest (incl. `file_picker` 12 API: `FilePicker.pickFile`).
+
 ## 1.5.2
 
 * Add: optional Maps key — location sharing works with GPS-only confirm sheet when no Google Maps key is set; map picker + place search when a key is provided.

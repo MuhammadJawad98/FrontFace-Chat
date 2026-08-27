@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../config/frontface_attachments_config.dart';
@@ -16,6 +18,15 @@ import 'frontface_voice_recorder.dart';
 /// Bottom sheet listing enabled attachment actions.
 class FrontFaceAttachmentSheet {
   FrontFaceAttachmentSheet._();
+
+  /// Prefer Android's system Photo Picker so gallery attach works without
+  /// READ_MEDIA_IMAGES / READ_MEDIA_VIDEO (Play photo & video policy).
+  static void _ensureAndroidPhotoPicker() {
+    final impl = ImagePickerPlatform.instance;
+    if (impl is ImagePickerAndroid) {
+      impl.useAndroidPhotoPicker = true;
+    }
+  }
 
   static Future<void> show({
     required BuildContext context,
@@ -143,6 +154,10 @@ class FrontFaceAttachmentSheet {
     }
     if (!ok || !context.mounted) return;
 
+    if (source == ImageSource.gallery) {
+      _ensureAndroidPhotoPicker();
+    }
+
     final picker = ImagePicker();
     final file = await picker.pickImage(
       source: source,
@@ -195,16 +210,15 @@ class FrontFaceAttachmentSheet {
     required FrontFaceChatStrings strings,
     required Future<void> Function(FrontFacePendingAttachment pending) onMedia,
   }) async {
-    final result = await FilePicker.platform.pickFiles(
+    final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: const ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'webm'],
-      withData: false,
     );
-    final file = result?.files.single;
-    final path = file?.path;
-    if (file == null || path == null) return;
+    if (file == null) return;
+    final path = file.path;
+    if (path == null) return;
 
-    final length = file.size;
+    final length = await file.length();
     if (length > attachments.maxAudioBytes) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -256,6 +256,9 @@ class _CurrentLocationBodyState extends State<_CurrentLocationBody> {
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF111827),
+                  ),
                   child: Text(strings.permissionNotNow),
                 ),
               ],

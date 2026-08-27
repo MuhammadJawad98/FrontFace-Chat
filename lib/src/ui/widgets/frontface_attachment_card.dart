@@ -73,6 +73,7 @@ class FrontFaceAttachmentCard extends StatelessWidget {
           url: attachment.url,
           derivedText: attachment.derivedText,
           processingStatus: attachment.processingStatus,
+          isUploading: attachment.isUploading,
           fg: _fg,
           muted: _muted,
           strings: strings,
@@ -83,8 +84,10 @@ class FrontFaceAttachmentCard extends StatelessWidget {
 
   Widget _withUploadChrome({required Widget child}) {
     Widget content = child;
-    if (attachment.isUploading) {
-      // Full-bubble dimmed overlay so the loader reads clearly on any media.
+    // Audio shows upload progress on the play button only (cleaner).
+    if (attachment.isUploading &&
+        attachment.kind != FrontFaceAttachmentKind.audio) {
+      // Full-bubble dimmed overlay so the loader reads clearly on images/location.
       content = AbsorbPointer(
         child: Stack(
           alignment: Alignment.center,
@@ -94,8 +97,8 @@ class FrontFaceAttachmentCard extends StatelessWidget {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: isVisitor
-                      ? const Color(0x99000000) // light black on dark bubbles
-                      : const Color(0xB3E5E7EB), // light gray on light bubbles
+                      ? const Color(0x66000000) // softer black on dark bubbles
+                      : const Color(0x80F3F4F6), // lighter gray on light bubbles
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Center(
@@ -362,6 +365,7 @@ class _AudioCard extends StatelessWidget {
   final String? url;
   final String? derivedText;
   final FrontFaceMediaProcessingStatus? processingStatus;
+  final bool isUploading;
   final Color fg;
   final Color muted;
   final FrontFaceChatStrings strings;
@@ -370,6 +374,7 @@ class _AudioCard extends StatelessWidget {
     required this.url,
     required this.derivedText,
     required this.processingStatus,
+    this.isUploading = false,
     required this.fg,
     required this.muted,
     required this.strings,
@@ -397,6 +402,7 @@ class _AudioCard extends StatelessWidget {
             foreground: fg,
             muted: muted,
             strings: strings,
+            isUploading: isUploading,
           )
         else
           Text(

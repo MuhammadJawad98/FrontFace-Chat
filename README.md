@@ -27,7 +27,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.5.2
+  frontface_chat: ^1.5.3
 ```
 
 For local development (this repo lives next to your app):
@@ -192,7 +192,9 @@ See `INTEGRATION_GUIDE.md` §5.3–5.5 for the location / image / voice API cont
 - **Android** `AndroidManifest.xml`: location / camera / mic permissions. If you
   use a Maps key, also add `com.google.android.geo.API_KEY` and enable
   **Maps SDK**, **Places API**, and **Geocoding API** on that key.
-  Gallery uses the system Photo Picker (no `READ_MEDIA_IMAGES` required for picking).
+  Gallery uses the system Photo Picker (enabled by the SDK) — do **not** declare
+  `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` for picking (Play photo & video policy).
+  Hosts do **not** need to set `ImagePickerAndroid.useAndroidPhotoPicker`.
 - **iOS** `Info.plist`: `NSLocationWhenInUseUsageDescription`,
   `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`,
   `NSMicrophoneUsageDescription`. With a Maps key, call

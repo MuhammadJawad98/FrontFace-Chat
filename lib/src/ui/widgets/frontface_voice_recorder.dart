@@ -209,6 +209,9 @@ class _VoiceRecorderBodyState extends State<_VoiceRecorderBody> {
             onPressed: _busy || _recording
                 ? null
                 : () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF111827),
+            ),
             child: Text(widget.strings.permissionNotNow),
           ),
         ],

@@ -33,6 +33,8 @@ class FrontFaceVoicePlayer extends StatefulWidget {
   final Color foreground;
   final Color muted;
   final FrontFaceChatStrings strings;
+  /// When true, play control shows a spinner (upload in progress) and is disabled.
+  final bool isUploading;
 
   const FrontFaceVoicePlayer({
     super.key,
@@ -40,6 +42,7 @@ class FrontFaceVoicePlayer extends StatefulWidget {
     required this.foreground,
     required this.muted,
     required this.strings,
+    this.isUploading = false,
   });
 
   @override
@@ -126,7 +129,7 @@ class _FrontFaceVoicePlayerState extends State<FrontFaceVoicePlayer> {
   }
 
   Future<void> _toggle() async {
-    if (_failed || _loading) return;
+    if (_failed || _loading || widget.isUploading) return;
     if (_isPlaying) {
       await _player.pause();
       _VoicePlaybackCoordinator.instance.release(_pauseSelf);
@@ -209,6 +212,10 @@ class _FrontFaceVoicePlayerState extends State<FrontFaceVoicePlayer> {
       );
     }
 
+    final busy = _loading || widget.isUploading;
+    final canSeek =
+        _ready && _duration > Duration.zero && !widget.isUploading;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -219,12 +226,12 @@ class _FrontFaceVoicePlayerState extends State<FrontFaceVoicePlayer> {
               shape: const CircleBorder(),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
-                onTap: _loading ? null : _toggle,
+                onTap: busy ? null : _toggle,
                 customBorder: const CircleBorder(),
                 child: SizedBox(
                   width: 40,
                   height: 40,
-                  child: _loading
+                  child: busy
                       ? Padding(
                           padding: const EdgeInsets.all(10),
                           child: CircularProgressIndicator(
@@ -277,16 +284,14 @@ class _FrontFaceVoicePlayerState extends State<FrontFaceVoicePlayer> {
                         min: 0,
                         max: maxMs,
                         value: posMs,
-                        onChanged: _ready && _duration > Duration.zero
+                        onChanged: canSeek
                             ? (v) => setState(() {
                                   _seeking = true;
                                   _position =
                                       Duration(milliseconds: v.round());
                                 })
                             : null,
-                        onChangeEnd: _ready && _duration > Duration.zero
-                            ? _seek
-                            : null,
+                        onChangeEnd: canSeek ? _seek : null,
                       ),
                     ),
                   ),
