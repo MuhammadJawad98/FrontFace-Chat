@@ -398,6 +398,7 @@ class _AudioCard extends StatelessWidget {
       children: [
         if (hasUrl)
           FrontFaceVoicePlayer(
+            key: ValueKey(url),
             url: url!,
             foreground: fg,
             muted: muted,

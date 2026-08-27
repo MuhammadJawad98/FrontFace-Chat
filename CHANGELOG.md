@@ -1,3 +1,8 @@
+## 1.5.4
+
+* Fix: existing voice notes no longer remount and flash a loader when a new message is sent (stable message keys + silent background prepare).
+* Docs: replace sample project UUID with a clearly fake placeholder; tighten `.gitignore` for secrets / credentials.
+
 ## 1.5.3
 
 * Fix: enable Android Photo Picker inside the SDK before gallery pick so hosts do not need `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` or a manual `useAndroidPhotoPicker` setup (Play photo & video policy).

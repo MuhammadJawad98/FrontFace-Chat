@@ -27,7 +27,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.5.3
+  frontface_chat: ^1.5.4
 ```
 
 For local development (this repo lives next to your app):
@@ -49,7 +49,7 @@ flutter pub get
 1. Sign in to the [FrontFace dashboard](https://frontface.app).
 2. Open your project → **Mobile SDK**.
 3. Copy:
-   - **Project ID** — UUID (e.g. `92b2d515-0000-45a7-8b0a-df20a33ceb2a`)
+   - **Project ID** — UUID (e.g. `00000000-0000-4000-8000-000000000000`)
    - **Publishable key** — starts with `pk_`
 
 > Do not confuse `projectId` with `publishableKey`. They are different values.

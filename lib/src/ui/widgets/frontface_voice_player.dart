@@ -97,29 +97,47 @@ class _FrontFaceVoicePlayerState extends State<FrontFaceVoicePlayer> {
       });
       _VoicePlaybackCoordinator.instance.release(_pauseSelf);
     });
-    unawaited(_prepare());
+    // Warm source in the background — keep the play icon visible so chat
+    // rebuilds (new messages) never flash a loader on existing voice notes.
+    unawaited(_prepare(showSpinner: false));
   }
 
-  Future<void> _prepare() async {
-    setState(() {
-      _loading = true;
-      _failed = false;
-    });
+  @override
+  void didUpdateWidget(covariant FrontFaceVoicePlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _ready = false;
+      _position = Duration.zero;
+      _duration = Duration.zero;
+      unawaited(_prepare(showSpinner: false));
+    }
+  }
+
+  Future<void> _prepare({required bool showSpinner}) async {
+    final prepareUrl = widget.url;
+    if (showSpinner && mounted) {
+      setState(() {
+        _loading = true;
+        _failed = false;
+      });
+    } else if (mounted) {
+      setState(() => _failed = false);
+    }
     try {
       await _player.setReleaseMode(ReleaseMode.stop);
       final source = _isLocal
-          ? DeviceFileSource(widget.url)
-          : UrlSource(widget.url);
+          ? DeviceFileSource(prepareUrl)
+          : UrlSource(prepareUrl);
       await _player.setSource(source);
       final duration = await _player.getDuration();
-      if (!mounted) return;
+      if (!mounted || widget.url != prepareUrl) return;
       setState(() {
         _duration = duration ?? Duration.zero;
         _ready = true;
         _loading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || widget.url != prepareUrl) return;
       setState(() {
         _failed = true;
         _loading = false;
@@ -129,7 +147,12 @@ class _FrontFaceVoicePlayerState extends State<FrontFaceVoicePlayer> {
   }
 
   Future<void> _toggle() async {
-    if (_failed || _loading || widget.isUploading) return;
+    if (_failed || widget.isUploading) return;
+    if (_loading) return;
+    if (!_ready) {
+      await _prepare(showSpinner: true);
+      if (!_ready || !mounted) return;
+    }
     if (_isPlaying) {
       await _player.pause();
       _VoicePlaybackCoordinator.instance.release(_pauseSelf);

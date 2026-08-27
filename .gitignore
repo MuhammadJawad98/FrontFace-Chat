@@ -10,6 +10,22 @@
 .svn/
 migrate_working_dir/
 
+# Secrets / local credentials (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.jks
+*.keystore
+credentials.json
+**/google-services.json
+**/GoogleService-Info.plist
+**/key.properties
+**/local.properties
+secrets/
+.secrets/
+
 # Local draft / duplicate docs (may contain notes; keep out of git)
 * copy.md
 * copy.mdc

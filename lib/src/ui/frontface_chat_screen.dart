@@ -359,6 +359,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                             final message = provider.messages[
                                 provider.messages.length - 1 - messageIndex];
                             return FrontFaceMessageBubble(
+                              key: ValueKey(message.id),
                               message: message,
                               theme: widget.theme,
                               strings: _strings,

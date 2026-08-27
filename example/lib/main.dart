@@ -180,7 +180,7 @@ class _HomePageState extends State<HomePage> {
                   controller: _projectIdController,
                   decoration: InputDecoration(
                     labelText: _isArabic ? 'معرّف المشروع' : 'Project ID',
-                    hintText: 'e.g. 92b2d515-0000-45a7-8b0a-df20a33ceb2a',
+                    hintText: 'e.g. 00000000-0000-4000-8000-000000000000',
                     border: const OutlineInputBorder(),
                   ),
                   textInputAction: TextInputAction.next,
