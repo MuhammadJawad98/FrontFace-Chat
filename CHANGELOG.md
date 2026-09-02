@@ -1,7 +1,7 @@
 ## 1.5.6
 
 * Fix: verified customers load unified history from `GET /api/customers/history` (all episodes merged by identity) instead of only the current conversation's `messages/public`. Falls back to `messages/public` on `403 NOT_VERIFIED` or when no session token is stored.
-* Chore: cap `audioplayers` at `^6.7.1` for compatibility with Flutter `>=3.27.1` hosts.
+* Chore: cap `audioplayers` at `^6.7.1` and `record` at `^6.2.1` for compatibility with Flutter `>=3.27.1` / SDK `^3.8.0` hosts.
 
 ## 1.5.5
 
