@@ -1062,6 +1062,149 @@ void main() {
     );
 
     test(
+      'verified customer loads unified history across episodes',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_visitor_id': 'mob_stable_visitor',
+          'frontface_lead_completed_${testConfig.projectId}': true,
+        });
+
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..leadCaptureCompleted = true
+          ..customerHistoryResponse = [
+            {
+              'id': 'm_new',
+              'senderType': 'ai',
+              'content': 'Welcome back!',
+              'createdAt': '2026-09-02T12:00:01.000Z',
+            },
+            {
+              'id': 'm_old',
+              'senderType': 'customer',
+              'content': 'From last week',
+              'createdAt': '2026-08-25T10:00:00.000Z',
+            },
+          ]
+          ..messagesResponse = [
+            {
+              'id': 'empty_thread',
+              'senderType': 'ai',
+              'content': 'Only this thread',
+              'createdAt': '2026-09-02T12:00:00.000Z',
+            },
+          ];
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        expect(
+          fake.calls.any((c) => c.path.contains('/api/customers/history')),
+          isTrue,
+        );
+        expect(
+          fake.calls.any((c) => c.path.contains('/messages/public')),
+          isFalse,
+          reason: 'unified history should replace per-conversation read',
+        );
+        expect(provider.messages.length, 2);
+        expect(provider.messages.first.content, 'From last week');
+        expect(provider.messages.last.content, 'Welcome back!');
+      },
+    );
+
+    test(
+      'NOT_VERIFIED falls back to messages/public',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_visitor_id': 'mob_stable_visitor',
+          'frontface_lead_completed_${testConfig.projectId}': true,
+        });
+
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..leadCaptureCompleted = true
+          ..customerHistoryNotVerified = true
+          ..customerHistoryResponse = []
+          ..messagesResponse = [
+            {
+              'id': 'm1',
+              'senderType': 'customer',
+              'content': 'Anonymous thread',
+              'createdAt': '2026-09-02T12:00:00.000Z',
+            },
+          ];
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        expect(
+          fake.calls.any((c) => c.path.contains('/api/customers/history')),
+          isTrue,
+        );
+        expect(
+          fake.calls.any((c) => c.path.contains('/messages/public')),
+          isTrue,
+        );
+        expect(provider.messages.single.content, 'Anonymous thread');
+      },
+    );
+
+    test(
+      'unified history paginates with nextCursor and preserves metadata/parts',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_visitor_id': 'mob_stable_visitor',
+          'frontface_lead_completed_${testConfig.projectId}': true,
+        });
+
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..leadCaptureCompleted = true
+          ..customerHistoryResponse = [
+            {
+              'id': 'm2',
+              'senderType': 'ai',
+              'content': 'Newer page',
+              'createdAt': '2026-09-02T12:00:01.000Z',
+            },
+          ]
+          ..customerHistoryPage2 = [
+            {
+              'id': 'm1',
+              'senderType': 'customer',
+              'content': '',
+              'createdAt': '2026-08-25T10:00:00.000Z',
+              'metadata': {'ticketCard': {'status': 'open'}},
+              'parts': [
+                {
+                  'type': 'location',
+                  'payload': {
+                    'latitude': 24.7,
+                    'longitude': 46.6,
+                    'label': 'Riyadh',
+                  },
+                },
+              ],
+            },
+          ];
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        expect(
+          fake.calls.where((c) => c.path.contains('/api/customers/history')),
+          hasLength(2),
+        );
+        expect(provider.messages.length, 2);
+        expect(provider.messages.first.attachment?.kind,
+            FrontFaceAttachmentKind.location);
+        expect(provider.messages.first.attachment?.latitude, closeTo(24.7, 0.001));
+        expect(provider.messages.last.content, 'Newer page');
+      },
+    );
+
+    test(
       'no lead yet → does not ensure-conversation (form first)',
       () async {
         final fake = FakeApiManager(testConfig)

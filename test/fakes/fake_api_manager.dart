@@ -51,6 +51,16 @@ class FakeApiManager extends FrontFaceApiManager {
   /// simulate hydrating a conversation with existing messages on reload.
   List<Map<String, dynamic>> messagesResponse = [];
 
+  /// Canned unified history for GET /api/customers/history (newest → oldest).
+  /// When non-null, [getWithSessionAuth] returns this instead of [messagesResponse].
+  List<Map<String, dynamic>>? customerHistoryResponse;
+
+  /// Optional second page for unified history pagination tests.
+  List<Map<String, dynamic>> customerHistoryPage2 = [];
+
+  /// When true, GET /api/customers/history throws 403 NOT_VERIFIED.
+  bool customerHistoryNotVerified = false;
+
   Map<String, dynamic> mediaUploadResponse = {
     'assetId': 'asset_1',
     'uploadUrl': 'https://storage.example.com/upload/signed',
@@ -102,6 +112,37 @@ class FakeApiManager extends FrontFaceApiManager {
       return {'messages': messagesResponse};
     }
     if (path.contains('/status')) return {'status': 'ai_active'};
+    return {};
+  }
+
+  @override
+  Future<Map<String, dynamic>> getWithSessionAuth(
+    String path, {
+    required String sessionToken,
+  }) async {
+    if (delay > Duration.zero) await Future.delayed(delay);
+    calls.add(RecordedCall(path: path, sessionToken: sessionToken));
+    _maybeThrow(path);
+
+    if (path.contains('/api/customers/history')) {
+      if (customerHistoryNotVerified || customerHistoryResponse == null) {
+        throw const FrontFaceApiException(
+          code: 'NOT_VERIFIED',
+          message: 'Customer is not verified.',
+          statusCode: 403,
+        );
+      }
+      if (path.contains('cursor=page2')) {
+        return {'messages': customerHistoryPage2};
+      }
+      if (customerHistoryPage2.isNotEmpty) {
+        return {
+          'messages': customerHistoryResponse!,
+          'nextCursor': 'page2',
+        };
+      }
+      return {'messages': customerHistoryResponse!};
+    }
     return {};
   }
 

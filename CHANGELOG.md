@@ -1,3 +1,8 @@
+## 1.5.6
+
+* Fix: verified customers load unified history from `GET /api/customers/history` (all episodes merged by identity) instead of only the current conversation's `messages/public`. Falls back to `messages/public` on `403 NOT_VERIFIED` or when no session token is stored.
+* Chore: cap `audioplayers` at `^6.7.1` for compatibility with Flutter `>=3.27.1` hosts.
+
 ## 1.5.5
 
 * Fix: pin `file_picker` to `>=11.0.0 <12.0.0` so hosts do not pull federated `android_file_picker` from v12 (breaks many Android release builds / requires Flutter ≥3.38).

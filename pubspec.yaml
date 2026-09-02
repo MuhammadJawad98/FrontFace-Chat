@@ -1,6 +1,6 @@
 name: frontface_chat
 description: Native Flutter SDK for FrontFace AI chat with lead capture and live human agent handoff support.
-version: 1.5.5
+version: 1.5.6
 homepage: https://frontface.app
 repository: https://github.com/MuhammadJawad98/FrontFace-Chat
 issue_tracker: https://github.com/MuhammadJawad98/FrontFace-Chat/issues
@@ -31,7 +31,7 @@ dependencies:
   google_maps_flutter: ^2.18.0
   record: ^7.1.1
   path_provider: ^2.1.6
-  audioplayers: ^6.8.1
+  audioplayers: ^6.7.1
 
 dev_dependencies:
   flutter_test:

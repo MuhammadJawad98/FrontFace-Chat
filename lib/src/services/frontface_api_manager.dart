@@ -55,6 +55,41 @@ class FrontFaceApiManager {
     }
   }
 
+  /// GET authenticated by session token only (no `X-Visitor-Id`).
+  ///
+  /// Used for `GET /api/customers/history` on verified customers.
+  Future<Map<String, dynamic>> getWithSessionAuth(
+    String path, {
+    required String sessionToken,
+  }) async {
+    final url = _url(path);
+    final headers = {
+      'Content-Type': 'application/json',
+      'X-FrontFace-Key': config.publishableKey,
+      'X-FrontFace-Session': sessionToken,
+    };
+    _logCurl('GET', url, headers);
+
+    try {
+      final response = await http.get(Uri.parse(url), headers: headers);
+      _log('GET (${response.statusCode}): ${response.body}');
+      return _parseResponse(response);
+    } on FrontFaceApiException {
+      rethrow;
+    } on SocketException {
+      throw const FrontFaceApiException(
+        code: 'NETWORK_ERROR',
+        message:
+            "You're offline. Check your internet connection and try again.",
+      );
+    } catch (_) {
+      throw const FrontFaceApiException(
+        code: 'UNKNOWN_ERROR',
+        message: 'Something went wrong. Please try again.',
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> post(
     String path, {
     required String visitorId,

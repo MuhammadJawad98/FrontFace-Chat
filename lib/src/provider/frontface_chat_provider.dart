@@ -848,6 +848,10 @@ class FrontFaceChatProvider extends ChangeNotifier
   /// Fetches full history (no `?after=`) and merges it into the existing
   /// transcript via `_appendMessage`'s de-dupe — never clears first.
   ///
+  /// Verified customers: tries unified `GET /api/customers/history` first
+  /// (all episodes merged by identity). Falls back to per-conversation
+  /// `messages/public` on `403 NOT_VERIFIED` or when no session token exists.
+  ///
   /// The GET fires right after a POST that may have just created the
   /// visitor's own message; the server isn't guaranteed to have indexed it
   /// yet (read-after-write lag). Clearing `_messages` and trusting the GET
@@ -858,11 +862,26 @@ class FrontFaceChatProvider extends ChangeNotifier
   Future<void> _mergeServerHistory() async {
     if (_visitorId == null || _sessionId == null) return;
 
-    final messages = await _api.fetchMessages(
-      visitorId: _visitorId!,
-      conversationId: _sessionId!,
-      sessionToken: _sessionToken,
-    );
+    List<FrontFaceChatMessage> messages;
+    final token = _sessionToken;
+    if (token != null && token.isNotEmpty) {
+      final unified = await _api.tryFetchCustomerHistory(sessionToken: token);
+      if (unified != null) {
+        messages = unified;
+      } else {
+        messages = await _api.fetchMessages(
+          visitorId: _visitorId!,
+          conversationId: _sessionId!,
+          sessionToken: _sessionToken,
+        );
+      }
+    } else {
+      messages = await _api.fetchMessages(
+        visitorId: _visitorId!,
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken,
+      );
+    }
 
     for (final message in messages) {
       _appendMessage(message);
