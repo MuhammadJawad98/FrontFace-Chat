@@ -1151,6 +1151,100 @@ void main() {
     );
 
     test(
+      'passes stored conversationId into ensure-conversation to resume',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_visitor_id': 'mob_stable_visitor',
+          'frontface_lead_completed_${testConfig.projectId}': true,
+          'frontface_session_id_${testConfig.projectId}': 'sess_existing',
+          'frontface_session_token_${testConfig.projectId}': 'tok_existing',
+        });
+
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..leadCaptureCompleted = true
+          ..messagesResponse = [
+            {
+              'id': 'm1',
+              'senderType': 'customer',
+              'content': 'Prior message',
+              'createdAt': '2026-09-01T10:00:00.000Z',
+            },
+          ];
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        final ensure = fake.calls.firstWhere(
+          (c) => c.path.contains('/ensure-conversation'),
+        );
+        expect(ensure.body?['conversationId'], 'sess_existing');
+        expect(provider.sessionId, 'sess_existing');
+        expect(provider.canChat, isTrue);
+      },
+    );
+
+    test(
+      'closed conversation with history auto-resumes without Start new chat',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_visitor_id': 'mob_stable_visitor',
+          'frontface_lead_completed_${testConfig.projectId}': true,
+          'frontface_session_id_${testConfig.projectId}': 'sess_closed',
+          'frontface_session_token_${testConfig.projectId}': 'tok_closed',
+        });
+
+        var ensureCalls = 0;
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..leadCaptureCompleted = true
+          ..customerHistoryResponse = [
+            {
+              'id': 'm_old',
+              'senderType': 'customer',
+              'content': 'From yesterday',
+              'createdAt': '2026-09-01T10:00:00.000Z',
+            },
+            {
+              'id': 'm_ai',
+              'senderType': 'ai',
+              'content': 'Thanks — resolved.',
+              'createdAt': '2026-09-01T10:01:00.000Z',
+            },
+          ]
+          ..conversationStatusResponse = {'status': 'closed'}
+          ..ensureConversationResponder = (body) {
+            ensureCalls++;
+            final passed = body?['conversationId']?.toString();
+            if (ensureCalls == 1) {
+              expect(passed, 'sess_closed');
+              return {
+                'conversationId': 'sess_closed',
+                'sessionToken': 'tok_closed',
+              };
+            }
+            // Resume path omits ended id → active thread.
+            expect(passed, isNull);
+            return {
+              'conversationId': 'sess_active',
+              'sessionToken': 'tok_active',
+            };
+          };
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+
+        expect(provider.messages.length, 2);
+        expect(provider.messages.first.content, 'From yesterday');
+        expect(provider.sessionId, 'sess_active');
+        expect(provider.status, FrontFaceConversationStatus.aiActive);
+        expect(provider.canChat, isTrue);
+        expect(provider.statusBanner, isNull);
+        expect(ensureCalls, 2);
+      },
+    );
+
+    test(
       'unified history paginates with nextCursor and preserves metadata/parts',
       () async {
         SharedPreferences.setMockInitialValues({

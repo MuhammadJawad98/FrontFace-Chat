@@ -1,3 +1,7 @@
+## 1.5.7
+
+* Fix: resume chat after history load — pass stored `conversationId` into `ensure-conversation`, and when the episode is `closed`/`resolved` silently open an active thread so the composer stays available (no forced “Start new chat”).
+
 ## 1.5.6
 
 * Fix: verified customers load unified history from `GET /api/customers/history` (all episodes merged by identity) instead of only the current conversation's `messages/public`. Falls back to `messages/public` on `403 NOT_VERIFIED` or when no session token is stored.

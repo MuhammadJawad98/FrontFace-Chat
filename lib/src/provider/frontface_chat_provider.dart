@@ -246,16 +246,17 @@ class FrontFaceChatProvider extends ChangeNotifier
 
   /// Resolves the visitor's active conversation, then loads full transcript.
   ///
-  /// When local `sessionId` is missing (cleared storage, new install of the
-  /// same account-keyed visitor, etc.), `ensure-conversation` recovers it —
-  /// history is keyed to [visitorId], not to locally cached session ids.
+  /// Always calls `ensure-conversation`, passing the stored [sessionId] when
+  /// present so the server can **resume** that thread instead of forking a
+  /// new empty one each launch. Unified history still merges older episodes.
   Future<void> _resolveAndHydrateHistory() async {
     if (_visitorId == null) return;
 
-    if (_sessionId == null) {
-      final ensured = await _api.ensureConversation(visitorId: _visitorId!);
-      await _applySessionFromResponse(ensured);
-    }
+    final ensured = await _api.ensureConversation(
+      visitorId: _visitorId!,
+      conversationId: _sessionId,
+    );
+    await _applySessionFromResponse(ensured);
 
     if (_sessionId != null) {
       await _hydrateConversation();
@@ -560,7 +561,10 @@ class FrontFaceChatProvider extends ChangeNotifier
 
   Future<void> _ensureConversationReady() async {
     if (_sessionId != null) return;
-    final ensured = await _api.ensureConversation(visitorId: _visitorId!);
+    final ensured = await _api.ensureConversation(
+      visitorId: _visitorId!,
+      conversationId: _sessionId,
+    );
     await _applySessionFromResponse(ensured);
   }
 
@@ -728,7 +732,10 @@ class FrontFaceChatProvider extends ChangeNotifier
 
     try {
       if (_sessionId == null) {
-        final ensured = await _api.ensureConversation(visitorId: _visitorId!);
+        final ensured = await _api.ensureConversation(
+          visitorId: _visitorId!,
+          conversationId: _sessionId,
+        );
         await _applySessionFromResponse(ensured);
       }
       if (_sessionId == null) {
@@ -970,6 +977,13 @@ class FrontFaceChatProvider extends ChangeNotifier
     _agentName = statusData['assignedAgent']?['name']?.toString();
     _queuePosition = statusData['queuePosition'] as int?;
 
+    // Ended episode + history on screen: open an active thread so the user can
+    // keep chatting without tapping "Start new chat". Keep the transcript.
+    if (_status == FrontFaceConversationStatus.resolved ||
+        _status == FrontFaceConversationStatus.closed) {
+      await _resumeActiveConversationKeepingHistory();
+    }
+
     if (isInHandoff) {
       _updateStatusBanner();
       _startPolling();
@@ -978,6 +992,22 @@ class FrontFaceChatProvider extends ChangeNotifier
     } else if (_messages.isEmpty) {
       _appendGreetingIfNeeded();
     }
+  }
+
+  /// After a closed/resolved conversation is hydrated, ensure a writable
+  /// `ai_active` session without clearing messages or showing start-new-chat.
+  Future<void> _resumeActiveConversationKeepingHistory() async {
+    if (_visitorId == null) return;
+    final ensured = await _api.ensureConversation(
+      visitorId: _visitorId!,
+      // Omit the ended id so the server returns/creates an active thread.
+    );
+    await _applySessionFromResponse(ensured);
+    _status = FrontFaceConversationStatus.aiActive;
+    _statusBanner = null;
+    _agentName = null;
+    _queuePosition = null;
+    _showOfflineForm = false;
   }
 
   void _startPolling() {

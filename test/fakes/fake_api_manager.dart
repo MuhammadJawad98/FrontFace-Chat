@@ -61,6 +61,13 @@ class FakeApiManager extends FrontFaceApiManager {
   /// When true, GET /api/customers/history throws 403 NOT_VERIFIED.
   bool customerHistoryNotVerified = false;
 
+  /// Canned conversation status for GET .../status.
+  Map<String, dynamic> conversationStatusResponse = {'status': 'ai_active'};
+
+  /// Optional override for ensure-conversation responses.
+  Map<String, dynamic> Function(Map<String, dynamic>? body)?
+      ensureConversationResponder;
+
   Map<String, dynamic> mediaUploadResponse = {
     'assetId': 'asset_1',
     'uploadUrl': 'https://storage.example.com/upload/signed',
@@ -111,7 +118,7 @@ class FakeApiManager extends FrontFaceApiManager {
     if (path.contains('/messages/public')) {
       return {'messages': messagesResponse};
     }
-    if (path.contains('/status')) return {'status': 'ai_active'};
+    if (path.contains('/status')) return conversationStatusResponse;
     return {};
   }
 
@@ -165,7 +172,12 @@ class FakeApiManager extends FrontFaceApiManager {
           {'response': 'ok', 'sessionId': 'sess_1', 'sessionToken': 'tok_1'};
     }
     if (path.contains('/ensure-conversation')) {
-      return {'conversationId': 'sess_1', 'sessionToken': 'tok_1'};
+      return ensureConversationResponder?.call(body) ??
+          {
+            'conversationId':
+                body?['conversationId']?.toString() ?? 'sess_1',
+            'sessionToken': 'tok_1',
+          };
     }
     if (path.contains('/handoff')) {
       return {'status': 'waiting', 'queuePosition': 1};

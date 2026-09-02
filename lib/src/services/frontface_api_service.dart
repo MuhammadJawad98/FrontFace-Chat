@@ -98,9 +98,15 @@ class FrontFaceApiService {
     );
   }
 
+  /// Creates or resumes the visitor's chat conversation.
+  ///
+  /// Pass [conversationId] when you already have one so the server can resume
+  /// that thread instead of forking a new empty conversation on every open.
   Future<Map<String, dynamic>> ensureConversation({
     required String visitorId,
+    String? conversationId,
   }) async {
+    final id = conversationId?.trim();
     return _api.post(
       '/api/chat/ensure-conversation',
       visitorId: visitorId,
@@ -108,6 +114,7 @@ class FrontFaceApiService {
         'projectId': config.projectId,
         'visitorId': visitorId,
         'source': 'mobile',
+        if (id != null && id.isNotEmpty) 'conversationId': id,
       },
     );
   }
