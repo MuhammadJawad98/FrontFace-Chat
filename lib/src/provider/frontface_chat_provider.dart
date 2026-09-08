@@ -1264,65 +1264,102 @@ class FrontFaceChatProvider extends ChangeNotifier
     final content = message.content.trim();
     final isLocal = message.id.startsWith('local_');
 
-    if (!isLocal) {
-      // Server copy of a provisional HTTP bubble (local_* id) — drop the
-      // local one so bot / handoff confirmations don't appear twice.
-      _messages.removeWhere(
+    // Optimistic customer bubbles must always appear — even when the same
+    // text already exists in history (user re-sent "hi"). AI/system locals
+    // still de-dupe against existing content (handoff confirmations).
+    if (isLocal && message.senderType == FrontFaceSenderType.customer) {
+      _messages.add(message);
+      _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      _lastMessageAt = _messages.isEmpty
+          ? null
+          : _messages.last.createdAt.toUtc().toIso8601String();
+      return;
+    }
+
+    // Server copy of a provisional text bubble — promote the newest matching
+    // local in place (keeps order; older same-text history stays intact).
+    if (!isLocal && content.isNotEmpty) {
+      final localIdx = _messages.lastIndexWhere(
         (m) =>
             m.id.startsWith('local_') &&
             m.senderType == message.senderType &&
-            m.content.trim() == content &&
-            content.isNotEmpty,
+            m.content.trim() == content,
       );
-
-      // Location / media: replace the matching local provisional **in place**
-      // so list order stays stable (user bubble stays above the agent reply).
-      if (message.hasParts) {
-        final idx = _messages.lastIndexWhere(
-          (m) =>
-              m.id.startsWith('local_') &&
-              m.senderType == message.senderType &&
-              m.hasParts &&
-              _attachmentPartsOverlap(m.parts, message.parts),
-        );
-        if (idx >= 0) {
-          final local = _messages[idx];
-          final mergedParts =
-              _mergePartsPreferLocal(local.parts, message.parts);
-          // Never promote to a blank bubble — if the server part can't be
-          // rendered yet, keep the local attachment the user already saw.
-          final promoted = FrontFaceChatMessage(
-            id: message.id,
-            content:
-                message.content.isNotEmpty ? message.content : local.content,
-            senderType: message.senderType,
-            senderName: message.senderName ?? local.senderName,
-            createdAt: local.createdAt,
-            metadata: _mergeAttachmentMetadata(local.metadata, message.metadata),
-            parts: mergedParts,
-          );
-          final parts = (promoted.attachment == null && local.attachment != null)
-              ? local.parts
-              : mergedParts;
-          _messages[idx] = FrontFaceChatMessage(
-            id: promoted.id,
-            content: promoted.content,
-            senderType: promoted.senderType,
-            senderName: promoted.senderName,
-            createdAt: promoted.createdAt,
-            metadata: promoted.metadata,
-            parts: parts,
-          );
+      if (localIdx >= 0) {
+        // Server id may already be in the transcript (e.g. hydrated earlier).
+        final existingIdx = _messages.indexWhere((m) => m.id == message.id);
+        if (existingIdx >= 0 && existingIdx != localIdx) {
+          _messages.removeAt(localIdx);
           _lastMessageAt = _messages.isEmpty
               ? null
               : _messages.last.createdAt.toUtc().toIso8601String();
           return;
         }
+        final local = _messages[localIdx];
+        _messages[localIdx] = FrontFaceChatMessage(
+          id: message.id,
+          content: message.content,
+          senderType: message.senderType,
+          senderName: message.senderName ?? local.senderName,
+          createdAt: local.createdAt,
+          metadata: message.metadata.raw.isNotEmpty
+              ? message.metadata
+              : local.metadata,
+          parts: message.parts.isNotEmpty ? message.parts : local.parts,
+        );
+        _lastMessageAt = _messages.isEmpty
+            ? null
+            : _messages.last.createdAt.toUtc().toIso8601String();
+        return;
       }
     }
 
-    // Same sender + text already shown (server id, earlier local, or a
-    // second poll of the same payload with a different id) — skip.
+    // Location / media: replace the matching local provisional **in place**
+    // so list order stays stable (user bubble stays above the agent reply).
+    if (!isLocal && message.hasParts) {
+      final idx = _messages.lastIndexWhere(
+        (m) =>
+            m.id.startsWith('local_') &&
+            m.senderType == message.senderType &&
+            m.hasParts &&
+            _attachmentPartsOverlap(m.parts, message.parts),
+      );
+      if (idx >= 0) {
+        final local = _messages[idx];
+        final mergedParts =
+            _mergePartsPreferLocal(local.parts, message.parts);
+        // Never promote to a blank bubble — if the server part can't be
+        // rendered yet, keep the local attachment the user already saw.
+        final promoted = FrontFaceChatMessage(
+          id: message.id,
+          content:
+              message.content.isNotEmpty ? message.content : local.content,
+          senderType: message.senderType,
+          senderName: message.senderName ?? local.senderName,
+          createdAt: local.createdAt,
+          metadata: _mergeAttachmentMetadata(local.metadata, message.metadata),
+          parts: mergedParts,
+        );
+        final parts = (promoted.attachment == null && local.attachment != null)
+            ? local.parts
+            : mergedParts;
+        _messages[idx] = FrontFaceChatMessage(
+          id: promoted.id,
+          content: promoted.content,
+          senderType: promoted.senderType,
+          senderName: promoted.senderName,
+          createdAt: promoted.createdAt,
+          metadata: promoted.metadata,
+          parts: parts,
+        );
+        _lastMessageAt = _messages.isEmpty
+            ? null
+            : _messages.last.createdAt.toUtc().toIso8601String();
+        return;
+      }
+    }
+
+    // Same sender + text already shown — skip (locals for customers handled above).
     if (content.isNotEmpty &&
         _messages.any(
           (m) =>

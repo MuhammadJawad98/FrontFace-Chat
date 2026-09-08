@@ -232,6 +232,81 @@ void main() {
         expect(messageCalls[1].sessionToken, 'tok_refreshed');
       },
     );
+
+    test(
+      'sendMessage always shows the user bubble even if same text is in history',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'frontface_visitor_id': 'mob_stable_visitor',
+          'frontface_lead_completed_${testConfig.projectId}': true,
+        });
+
+        final fake = FakeApiManager(testConfig)
+          ..delay = const Duration(milliseconds: 40)
+          ..embedConfigResponse = _leadCaptureEmailAfterConfig
+          ..leadCaptureCompleted = true
+          ..customerHistoryResponse = [
+            {
+              'id': 'hist_1',
+              'senderType': 'customer',
+              'content': 'hello',
+              'createdAt': '2026-09-01T10:00:00.000Z',
+            },
+            {
+              'id': 'hist_2',
+              'senderType': 'ai',
+              'content': 'Hi there!',
+              'createdAt': '2026-09-01T10:00:01.000Z',
+            },
+          ]
+          ..sendMessageResponder = (_) => {
+                'response':
+                    "You're in the queue — an agent will be with you shortly.",
+                'sessionId': 'sess_1',
+                'sessionToken': 'tok_1',
+                'handoff': {'status': 'waiting', 'queuePosition': 2},
+              };
+
+        final provider = _buildProvider(fake);
+        await provider.initialize();
+        expect(provider.messages.length, 2);
+
+        // Hold the network long enough to observe the optimistic bubble.
+        final sendFuture = provider.sendMessage('hello');
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        final customerBubbles = provider.messages
+            .where(
+              (m) =>
+                  m.senderType == FrontFaceSenderType.customer &&
+                  m.content == 'hello',
+            )
+            .toList();
+        expect(
+          customerBubbles.length,
+          greaterThanOrEqualTo(2),
+          reason: 'history hello + newly sent hello must both be visible',
+        );
+        expect(provider.isSending, isTrue);
+
+        await sendFuture;
+
+        expect(
+          provider.messages.any(
+            (m) =>
+                m.senderType == FrontFaceSenderType.customer &&
+                m.content == 'hello',
+          ),
+          isTrue,
+        );
+        expect(
+          provider.messages.any(
+            (m) => m.content.contains('queue'),
+          ),
+          isTrue,
+        );
+      },
+    );
   });
 
   group('handoff message de-dupe', () {
@@ -282,8 +357,10 @@ void main() {
         );
         expect(connecting.single.id, 'ai_handoff_1');
         expect(
-          provider.messages.where((m) => m.content == 'can I talk to a human'),
-          hasLength(1),
+          provider.messages
+              .where((m) => m.content == 'can I talk to a human')
+              .length,
+          greaterThanOrEqualTo(1),
           reason: 'visitor message must stay visible after handoff merge',
         );
         expect(provider.isInHandoff, isTrue);

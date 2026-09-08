@@ -1,3 +1,7 @@
+## 1.5.8
+
+* Fix: always show the optimistic customer bubble when sending — re-sending text that already exists in history no longer hides the new message behind the typing/queue indicator.
+
 ## 1.5.7
 
 * Fix: resume chat after history load — pass stored `conversationId` into `ensure-conversation`, and when the episode is `closed`/`resolved` silently open an active thread so the composer stays available (no forced “Start new chat”).
