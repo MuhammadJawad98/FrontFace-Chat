@@ -17,7 +17,7 @@ Native Flutter SDK for [FrontFace](https://frontface.app) AI chat with optional 
 
 ## Requirements
 
-- Flutter 3.22+
+- Flutter 3.35+ (keeps voice/attachment plugins on the pre–3.44 line so hosts rarely need `dependency_overrides`)
 - Dart 3.8+
 - A FrontFace account with **Mobile SDK** enabled
 
@@ -27,8 +27,12 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.5.8
+  frontface_chat: ^1.5.9
 ```
+
+That is enough for FrontFace. The package pins `audioplayers` / `record` / `image_picker_android` (and their platform plugins), `file_picker` 11.x, `geolocator` `<14.0.3`, and `package_info_plus` `<10` so you should **not** need `dependency_overrides` for those.
+
+You may still need unrelated host overrides (for example `flutter_google_places_sdk*`, or `permission_handler_android: 13.0.1` if your app itself uses `permission_handler` `^13` and hits the Android 14 Kotlin plugin issue).
 
 For local development (this repo lives next to your app):
 

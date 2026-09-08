@@ -1,3 +1,8 @@
+## 1.5.9
+
+* Chore: pin `audioplayers` / `record` / `image_picker_android` (and their platform plugins) to Flutter 3.35–3.43–compatible ranges so host apps can depend on `frontface_chat` alone without those `dependency_overrides`.
+* Chore: raise minimum Flutter to `>=3.35.0` (matches the pinned plugin line; Dart 3.8+).
+
 ## 1.5.8
 
 * Fix: always show the optimistic customer bubble when sending — re-sending text that already exists in history no longer hides the new message behind the typing/queue indicator.
