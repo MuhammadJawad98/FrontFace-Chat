@@ -1,3 +1,7 @@
+## 1.5.10
+
+* Chore: debug `curl` logs are a single copy-pasteable line with full URL, headers (including key/session), and JSON body.
+
 ## 1.5.9
 
 * Chore: pin `audioplayers` / `record` / `image_picker_android` (and their platform plugins) to Flutter 3.35–3.43–compatible ranges so host apps can depend on `frontface_chat` alone without those `dependency_overrides`.

@@ -27,7 +27,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.5.9
+  frontface_chat: ^1.5.10
 ```
 
 That is enough for FrontFace. The package pins `audioplayers` / `record` / `image_picker_android` (and their platform plugins), `file_picker` 11.x, `geolocator` `<14.0.3`, and `package_info_plus` `<10` so you should **not** need `dependency_overrides` for those.
@@ -369,8 +369,10 @@ const config = FrontFaceChatConfig(
 );
 ```
 
-Secrets (`X-FrontFace-Key`, session tokens) are redacted from curl logs. Leave
-`debugLogging: false` (the default) in production configs.
+When enabled, each request prints one **copy-pasteable** single-line `curl`
+(full base URL, headers including key/session, and JSON body). Turn it off
+when you are done — do not share those console dumps. Still ignored in
+release/profile builds.
 
 | Option | Required | Notes |
 |--------|----------|--------|

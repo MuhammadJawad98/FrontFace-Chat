@@ -192,9 +192,14 @@ class FrontFaceApiManager {
 
   void _log(String message) {
     if (!_canLog) return;
-    debugPrint('[FrontFace] $message');
+    // Avoid debugPrint wrapping so long responses stay copyable.
+    debugPrint('[FrontFace] $message', wrapWidth: 1 << 20);
   }
 
+  /// Single-line, shell-ready curl (full URL, headers, body) for copy-paste.
+  ///
+  /// Only emitted when [debugLogging] is on in a debug build. Includes real
+  /// keys/tokens — do not leave `debugLogging: true` in shared/CI logs.
   void _logCurl(
     String method,
     String url,
@@ -202,23 +207,26 @@ class FrontFaceApiManager {
     Map<String, dynamic>? body,
   }) {
     if (!_canLog) return;
-    // Redact secrets so even debug console dumps aren't copy-pasteable credentials.
-    final safeHeaders = headers.map((key, value) {
-      final lower = key.toLowerCase();
-      if (lower.contains('key') ||
-          lower.contains('session') ||
-          lower.contains('authorization') ||
-          lower.contains('token')) {
-        return MapEntry(key, '***');
-      }
-      return MapEntry(key, value);
-    });
-    final headerStrings = safeHeaders.entries
-        .map((e) => '-H "${e.key}: ${e.value}"')
-        .join(' ');
-    final bodyString = body != null
-        ? "--data-raw '${jsonEncode(body).replaceAll("'", "'\"'\"'")}'"
-        : '';
-    debugPrint('[FrontFace] curl -X $method $headerStrings $bodyString "$url"');
+    final parts = <String>[
+      'curl',
+      '-X',
+      method,
+      _shellSingleQuote(url),
+    ];
+    for (final e in headers.entries) {
+      parts.add('-H');
+      parts.add(_shellSingleQuote('${e.key}: ${e.value}'));
+    }
+    if (body != null) {
+      parts.add('--data-raw');
+      parts.add(_shellSingleQuote(jsonEncode(body)));
+    }
+    // One physical line; huge wrapWidth so Flutter does not break the curl.
+    debugPrint('[FrontFace] ${parts.join(' ')}', wrapWidth: 1 << 20);
+  }
+
+  /// POSIX single-quoted string: `'foo'"'"'bar'` for embedded quotes.
+  static String _shellSingleQuote(String value) {
+    return "'${value.replaceAll("'", "'\"'\"'")}'";
   }
 }
