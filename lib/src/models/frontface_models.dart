@@ -148,11 +148,16 @@ class FrontFaceChatMessage {
       senderType: senderType,
       senderName: json['senderName']?.toString(),
       createdAt: createdAt,
-      metadata: FrontFaceMessageMetadata.fromJson(
-        json['metadata'] as Map<String, dynamic>?,
-      ),
+      metadata: FrontFaceMessageMetadata.fromJson(_asStringKeyMap(json['metadata'])),
       parts: parts,
     );
+  }
+
+  static Map<String, dynamic>? _asStringKeyMap(Object? value) {
+    if (value == null) return null;
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
   }
 
   factory FrontFaceChatMessage.local({
@@ -217,14 +222,25 @@ class FrontFaceMessagePart {
       id: json['id']?.toString(),
       type: _parsePartType(json['type']?.toString()),
       processingStatus: _parseProcessing(json['processingStatus']?.toString()),
-      position: json['position'] as int?,
+      position: _asInt(json['position']),
       mediaAssetId: json['mediaAssetId']?.toString(),
       url: json['url']?.toString(),
       derivedText: json['derivedText']?.toString(),
-      payload: json['payload'] is Map
-          ? Map<String, dynamic>.from(json['payload'] as Map)
-          : const {},
+      payload: _payloadMap(json['payload']),
     );
+  }
+
+  static Map<String, dynamic> _payloadMap(Object? value) {
+    if (value is Map<String, dynamic>) return Map<String, dynamic>.from(value);
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return const {};
+  }
+
+  static int? _asInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim());
+    return null;
   }
 
   factory FrontFaceMessagePart.localLocation(FrontFaceLocationData location) {

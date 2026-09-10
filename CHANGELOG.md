@@ -1,3 +1,8 @@
+## 1.5.11
+
+* Fix: history no longer collapses location (or media) bubbles that share the same coordinates/asset — each message id is kept, so re-shared pins from `GET /api/customers/history` all render.
+* Fix: harden message/part JSON parsing for nested `metadata` / `payload` maps.
+
 ## 1.5.10
 
 * Chore: debug `curl` logs are a single copy-pasteable line with full URL, headers (including key/session), and JSON body.

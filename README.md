@@ -27,7 +27,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.5.10
+  frontface_chat: ^1.5.11
 ```
 
 That is enough for FrontFace. The package pins `audioplayers` / `record` / `image_picker_android` (and their platform plugins), `file_picker` 11.x, `geolocator` `<14.0.3`, and `package_info_plus` `<10` so you should **not** need `dependency_overrides` for those.

@@ -1369,16 +1369,10 @@ class FrontFaceChatProvider extends ChangeNotifier
       return;
     }
 
-    // Same attachment parts already shown (empty-content location/media).
-    if (message.hasParts &&
-        _messages.any(
-          (m) =>
-              m.senderType == message.senderType &&
-              m.hasParts &&
-              _attachmentPartsOverlap(m.parts, message.parts),
-        )) {
-      return;
-    }
+    // Do NOT collapse distinct server messages that share the same GPS pin /
+    // media asset. Users re-share the same location often; history must keep
+    // every message id. Local provisional ↔ server promote is handled above;
+    // rematches of the same server id are caught by the id check at the top.
 
     _messages.add(message);
     _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
