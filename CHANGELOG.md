@@ -1,3 +1,7 @@
+## 1.5.12
+
+* Fix: history keeps every customer text message by id — repeated phrases like `"hello"` no longer collapse to a single bubble (AI/agent handoff confirmations still de-dupe).
+
 ## 1.5.11
 
 * Fix: history no longer collapses location (or media) bubbles that share the same coordinates/asset — each message id is kept, so re-shared pins from `GET /api/customers/history` all render.

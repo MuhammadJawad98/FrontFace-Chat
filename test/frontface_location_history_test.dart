@@ -139,4 +139,73 @@ void main() {
     expect(find.text('34 Ellis St, San Francisco, CA 94102, USA'), findsOneWidget);
     expect(find.byIcon(Icons.location_on_rounded), findsOneWidget);
   });
+
+  test(
+    'history keeps every customer hello even when text matches',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'frontface_visitor_id': 'mob_stable_visitor',
+        'frontface_lead_completed_${testConfig.projectId}': true,
+      });
+
+      final page = jsonDecode('''
+{
+  "messages": [
+    {
+      "id": "21ee3151-e546-4dca-9bf2-b1cf56dded2e",
+      "senderType": "customer",
+      "content": "how are you",
+      "metadata": {},
+      "parts": [],
+      "createdAt": "2026-09-13T11:59:57.979932+00:00"
+    },
+    {
+      "id": "d49cbac8-620f-40be-b669-1798ae8a7a5a",
+      "senderType": "customer",
+      "content": "hello",
+      "metadata": {},
+      "parts": [],
+      "createdAt": "2026-09-13T11:59:43.342835+00:00"
+    },
+    {
+      "id": "72105401-f9d2-48a8-8f2d-6812ccd07de9",
+      "senderType": "customer",
+      "content": "hello",
+      "metadata": {},
+      "parts": [],
+      "createdAt": "2026-09-08T23:48:17.221053+00:00"
+    }
+  ]
+}
+''') as Map<String, dynamic>;
+
+      final messages = (page['messages'] as List).cast<Map<String, dynamic>>();
+      final fake = FakeApiManager(testConfig)
+        ..embedConfigResponse = _lead
+        ..leadCaptureCompleted = true
+        ..customerHistoryResponse = messages;
+
+      final api = FrontFaceApiService(config: testConfig, apiManager: fake);
+      final provider = FrontFaceChatProvider(
+        config: testConfig,
+        api: api,
+        store: FrontFaceVisitorStore(),
+      );
+      await provider.initialize();
+
+      final hellos = provider.messages.where((m) => m.content == 'hello').toList();
+      expect(hellos, hasLength(2));
+      expect(
+        hellos.map((m) => m.id),
+        containsAll([
+          'd49cbac8-620f-40be-b669-1798ae8a7a5a',
+          '72105401-f9d2-48a8-8f2d-6812ccd07de9',
+        ]),
+      );
+      expect(
+        provider.messages.any((m) => m.content == 'how are you'),
+        isTrue,
+      );
+    },
+  );
 }

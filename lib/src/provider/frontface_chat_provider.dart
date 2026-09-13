@@ -1359,8 +1359,11 @@ class FrontFaceChatProvider extends ChangeNotifier
       }
     }
 
-    // Same sender + text already shown — skip (locals for customers handled above).
+    // Bot/agent/system: skip if the same text is already on screen (handoff
+    // confirmation can arrive via HTTP response and history with different ids).
+    // Customer: keep every distinct server id — repeated "hello" is two bubbles.
     if (content.isNotEmpty &&
+        message.senderType != FrontFaceSenderType.customer &&
         _messages.any(
           (m) =>
               m.senderType == message.senderType &&
@@ -1369,10 +1372,9 @@ class FrontFaceChatProvider extends ChangeNotifier
       return;
     }
 
-    // Do NOT collapse distinct server messages that share the same GPS pin /
-    // media asset. Users re-share the same location often; history must keep
-    // every message id. Local provisional ↔ server promote is handled above;
-    // rematches of the same server id are caught by the id check at the top.
+    // Distinct server ids always win for attachments (location/image/audio).
+    // Local provisional ↔ server promote is handled above; same-id rematches
+    // are caught by the id check at the top.
 
     _messages.add(message);
     _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
