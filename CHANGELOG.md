@@ -1,3 +1,7 @@
+## 1.5.13
+
+* Fix: every distinct message id from history/API is shown — no content-based dropping for customer or agent text. Local optimistic bubbles only promote to a near-in-time server copy so an older repeated "hello" cannot replace a just-sent one.
+
 ## 1.5.12
 
 * Fix: history keeps every customer text message by id — repeated phrases like `"hello"` no longer collapse to a single bubble (AI/agent handoff confirmations still de-dupe).

@@ -331,13 +331,16 @@ void main() {
             'id': 'cust_1',
             'senderType': 'customer',
             'content': 'can I talk to a human',
-            'createdAt': DateTime(2024, 1, 1, 12, 0, 0).toIso8601String(),
+            'createdAt': DateTime.now()
+                .subtract(const Duration(seconds: 2))
+                .toUtc()
+                .toIso8601String(),
           },
           {
             'id': 'ai_handoff_1',
             'senderType': 'ai',
             'content': confirmation,
-            'createdAt': DateTime(2024, 1, 1, 12, 0, 1).toIso8601String(),
+            'createdAt': DateTime.now().toUtc().toIso8601String(),
           },
         ];
 
@@ -395,7 +398,7 @@ void main() {
             'id': 'ai_handoff_1',
             'senderType': 'ai',
             'content': confirmation,
-            'createdAt': DateTime(2024, 1, 1, 12, 0, 1).toIso8601String(),
+            'createdAt': DateTime.now().toUtc().toIso8601String(),
           },
         ];
 
@@ -462,7 +465,7 @@ void main() {
             'id': 'ai_server_1',
             'senderType': 'ai',
             'content': reply,
-            'createdAt': DateTime(2024, 1, 1, 12, 0, 1).toIso8601String(),
+            'createdAt': DateTime.now().toUtc().toIso8601String(),
           },
         ];
 

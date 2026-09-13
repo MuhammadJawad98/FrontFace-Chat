@@ -1259,14 +1259,15 @@ class FrontFaceChatProvider extends ChangeNotifier
   }
 
   void _appendMessage(FrontFaceChatMessage message) {
+    // Source of truth for the transcript is message id. Never drop a distinct
+    // server id because the text/coords/asset looked familiar.
     if (_messages.any((m) => m.id == message.id)) return;
 
     final content = message.content.trim();
     final isLocal = message.id.startsWith('local_');
 
     // Optimistic customer bubbles must always appear — even when the same
-    // text already exists in history (user re-sent "hi"). AI/system locals
-    // still de-dupe against existing content (handoff confirmations).
+    // text already exists in history (user re-sent "hi").
     if (isLocal && message.senderType == FrontFaceSenderType.customer) {
       _messages.add(message);
       _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
@@ -1276,14 +1277,29 @@ class FrontFaceChatProvider extends ChangeNotifier
       return;
     }
 
+    // Local AI/agent/system: skip if that text is already on screen (handoff
+    // confirmation may already be hydrated from history before the HTTP
+    // provisional is appended).
+    if (isLocal &&
+        content.isNotEmpty &&
+        _messages.any(
+          (m) =>
+              m.senderType == message.senderType &&
+              m.content.trim() == content,
+        )) {
+      return;
+    }
+
     // Server copy of a provisional text bubble — promote the newest matching
-    // local in place (keeps order; older same-text history stays intact).
+    // local in place. Only pair when timestamps are close so old history
+    // (another "hello" from last week) cannot steal a just-sent local bubble.
     if (!isLocal && content.isNotEmpty) {
       final localIdx = _messages.lastIndexWhere(
         (m) =>
             m.id.startsWith('local_') &&
             m.senderType == message.senderType &&
-            m.content.trim() == content,
+            m.content.trim() == content &&
+            _isPlausibleLocalServerPair(m.createdAt, message.createdAt),
       );
       if (localIdx >= 0) {
         // Server id may already be in the transcript (e.g. hydrated earlier).
@@ -1322,7 +1338,8 @@ class FrontFaceChatProvider extends ChangeNotifier
             m.id.startsWith('local_') &&
             m.senderType == message.senderType &&
             m.hasParts &&
-            _attachmentPartsOverlap(m.parts, message.parts),
+            _attachmentPartsOverlap(m.parts, message.parts) &&
+            _isPlausibleLocalServerPair(m.createdAt, message.createdAt),
       );
       if (idx >= 0) {
         final local = _messages[idx];
@@ -1359,23 +1376,6 @@ class FrontFaceChatProvider extends ChangeNotifier
       }
     }
 
-    // Bot/agent/system: skip if the same text is already on screen (handoff
-    // confirmation can arrive via HTTP response and history with different ids).
-    // Customer: keep every distinct server id — repeated "hello" is two bubbles.
-    if (content.isNotEmpty &&
-        message.senderType != FrontFaceSenderType.customer &&
-        _messages.any(
-          (m) =>
-              m.senderType == message.senderType &&
-              m.content.trim() == content,
-        )) {
-      return;
-    }
-
-    // Distinct server ids always win for attachments (location/image/audio).
-    // Local provisional ↔ server promote is handled above; same-id rematches
-    // are caught by the id check at the top.
-
     _messages.add(message);
     _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     // Bookmark must be the newest message after sort — not the one just
@@ -1383,6 +1383,17 @@ class FrontFaceChatProvider extends ChangeNotifier
     _lastMessageAt = _messages.isEmpty
         ? null
         : _messages.last.createdAt.toUtc().toIso8601String();
+  }
+
+  /// Local optimistic bubbles should only be promoted by a near-in-time server
+  /// copy — never by an older same-text/same-pin history row from last week.
+  ///
+  /// Compare in UTC. Server may be slightly earlier than local (history
+  /// stamped before send, or clock skew); allow up to 5 minutes earlier.
+  bool _isPlausibleLocalServerPair(DateTime localAt, DateTime serverAt) {
+    final local = localAt.toUtc();
+    final server = serverAt.toUtc();
+    return !server.isBefore(local.subtract(const Duration(minutes: 5)));
   }
 
   /// Keep a local file path / location pin as fallback display when the

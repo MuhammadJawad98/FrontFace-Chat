@@ -208,4 +208,50 @@ void main() {
       );
     },
   );
+
+  test(
+    'history keeps every API message id including many identical hellos',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'frontface_visitor_id': 'mob_stable_visitor',
+        'frontface_lead_completed_${testConfig.projectId}': true,
+      });
+
+      final hellos = List.generate(
+        6,
+        (i) => {
+          'id': 'hello_$i',
+          'senderType': 'customer',
+          'content': 'hello',
+          'metadata': {},
+          'parts': [],
+          'createdAt':
+              DateTime.utc(2026, 8, 24 + i, 10, 0, 0).toIso8601String(),
+        },
+      );
+
+      final fake = FakeApiManager(testConfig)
+        ..embedConfigResponse = _lead
+        ..leadCaptureCompleted = true
+        ..customerHistoryResponse = hellos;
+
+      final api = FrontFaceApiService(config: testConfig, apiManager: fake);
+      final provider = FrontFaceChatProvider(
+        config: testConfig,
+        api: api,
+        store: FrontFaceVisitorStore(),
+      );
+      await provider.initialize();
+
+      expect(provider.messages, hasLength(6));
+      expect(
+        provider.messages.every((m) => m.content == 'hello'),
+        isTrue,
+      );
+      expect(
+        provider.messages.map((m) => m.id).toSet(),
+        hasLength(6),
+      );
+    },
+  );
 }
