@@ -27,7 +27,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.5.13
+  frontface_chat: ^1.5.14
 ```
 
 That is enough for FrontFace. The package pins `audioplayers` / `record` / `image_picker_android` (and their platform plugins), `file_picker` 11.x, `geolocator` `<14.0.3`, and `package_info_plus` `<10` so you should **not** need `dependency_overrides` for those.
@@ -135,7 +135,7 @@ final salesConfig = FrontFaceChatConfig(
 await FrontFaceChat.open(context, config: supportConfig);
 ```
 
-Visitor id is shared device-wide (one `mob_*` id) by default. For **logged-in** users, pass a stable account-keyed `visitorId` from your backend so history follows the user across reinstalls/devices (see [`CHAT_HISTORY_GUIDE.md`](./CHAT_HISTORY_GUIDE.md)). Then call `identify` so agents see a verified contact.
+Visitor id is shared device-wide (one `mob_*` id) by default. For **logged-in** users, pass a stable account-keyed `visitorId` from your backend so history follows the user across reinstalls/devices. Then call `identify` so agents see a verified contact.
 
 ```dart
 final provider = FrontFaceChat.createProvider(
@@ -189,7 +189,7 @@ final config = FrontFaceChatConfig(
 );
 ```
 
-See `INTEGRATION_GUIDE.md` §5.3–5.5 for the location / image / voice API contracts.
+Location, image, and voice attachments use `POST /api/chat/message` (`location` object or `parts`) and `POST /api/media/uploads` for media reserve+PUT.
 
 **Native setup (host app):**
 

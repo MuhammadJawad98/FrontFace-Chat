@@ -23,6 +23,7 @@ class FakeRealtimeBridge implements FrontFaceRealtimeBridge {
     required String conversationId,
     required void Function(String event, Map<String, dynamic> payload) onEvent,
     required void Function() onDisconnected,
+    void Function()? onSubscribed,
   }) async {
     connectCount++;
     lastApiKey = apiKey;
@@ -36,6 +37,7 @@ class FakeRealtimeBridge implements FrontFaceRealtimeBridge {
       return false;
     }
     _connected = true;
+    onSubscribed?.call();
     return true;
   }
 

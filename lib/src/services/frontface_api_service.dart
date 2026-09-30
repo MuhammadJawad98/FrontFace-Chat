@@ -160,7 +160,11 @@ class FrontFaceApiService {
     required String? sessionToken,
     String? after,
   }) async {
-    final query = after == null ? '' : '?after=${Uri.encodeComponent(after)}';
+    final params = <String>['partTypes=file'];
+    if (after != null && after.isNotEmpty) {
+      params.add('after=${Uri.encodeComponent(after)}');
+    }
+    final query = '?${params.join('&')}';
     final data = await _api.get(
       '/api/widget/conversations/$conversationId/messages/public$query',
       visitorId: visitorId,
@@ -177,48 +181,60 @@ class FrontFaceApiService {
   /// Returns `null` when the server responds `403 NOT_VERIFIED` — the caller
   /// should fall back to [fetchMessages] for anonymous sessions.
   ///
-  /// Messages are returned oldest → newest (API pages are newest → oldest).
+  /// LIVE_REPLIES §5.2: loads **one page** on open (newest → oldest from API,
+  /// returned oldest → newest). Pass [cursor] to load older pages on demand —
+  /// do **not** auto-walk every page on chat open.
+  Future<({List<FrontFaceChatMessage> messages, String? nextCursor})?>
+      tryFetchCustomerHistoryPage({
+    required String sessionToken,
+    String? cursor,
+  }) async {
+    final params = <String>['partTypes=file'];
+    if (cursor != null && cursor.isNotEmpty) {
+      params.add('cursor=${Uri.encodeComponent(cursor)}');
+    }
+    final path = '/api/customers/history?${params.join('&')}';
+    try {
+      final data = await _api.getWithSessionAuth(
+        path,
+        sessionToken: sessionToken,
+      );
+      final raw = data['messages'] as List<dynamic>? ?? [];
+      final collected = <FrontFaceChatMessage>[];
+      for (final item in raw) {
+        if (item is Map<String, dynamic>) {
+          collected.add(FrontFaceChatMessage.fromJson(item));
+        } else if (item is Map) {
+          collected.add(
+            FrontFaceChatMessage.fromJson(Map<String, dynamic>.from(item)),
+          );
+        }
+      }
+      final next = data['nextCursor']?.toString();
+      // API is newest → oldest; UI wants oldest → newest.
+      return (
+        messages: collected.reversed.toList(),
+        nextCursor: (next == null || next.isEmpty) ? null : next,
+      );
+    } on FrontFaceApiException catch (e) {
+      if (e.statusCode == 403 && e.code == 'NOT_VERIFIED') {
+        return null;
+      }
+      rethrow;
+    }
+  }
+
+  /// First page only — see [tryFetchCustomerHistoryPage].
   Future<List<FrontFaceChatMessage>?> tryFetchCustomerHistory({
     required String sessionToken,
   }) async {
-    final collected = <FrontFaceChatMessage>[];
-    String? cursor;
-
-    while (true) {
-      final path = cursor == null
-          ? '/api/customers/history'
-          : '/api/customers/history?cursor=${Uri.encodeComponent(cursor)}';
-      try {
-        final data = await _api.getWithSessionAuth(
-          path,
-          sessionToken: sessionToken,
-        );
-        final raw = data['messages'] as List<dynamic>? ?? [];
-        for (final item in raw) {
-          if (item is Map<String, dynamic>) {
-            collected.add(FrontFaceChatMessage.fromJson(item));
-          } else if (item is Map) {
-            collected.add(
-              FrontFaceChatMessage.fromJson(Map<String, dynamic>.from(item)),
-            );
-          }
-        }
-
-        final next = data['nextCursor']?.toString();
-        if (next == null || next.isEmpty) break;
-        cursor = next;
-      } on FrontFaceApiException catch (e) {
-        if (e.statusCode == 403 && e.code == 'NOT_VERIFIED') {
-          return null;
-        }
-        rethrow;
-      }
-    }
-
-    return collected.reversed.toList();
+    final page = await tryFetchCustomerHistoryPage(sessionToken: sessionToken);
+    return page?.messages;
   }
 
   Future<bool> getLeadCaptureStatus(String visitorId) async {
+    // Website widget only — mobile apps must not call this on chat open
+    // (LIVE_REPLIES §8 #9). Kept for rare explicit host use.
     final data = await _api.get(
       '/api/chat/lead-capture/status'
       '?projectId=${config.projectId}&visitorId=${Uri.encodeComponent(visitorId)}',
@@ -280,7 +296,7 @@ class FrontFaceApiService {
   }
 
   /// Links a logged-in user to this visitor via a JWT from the tenant backend.
-  /// See [IDENTITY_VERIFICATION_GUIDE.md] — never blocks chat on failure.
+  /// Never blocks chat on failure.
   Future<FrontFaceIdentifyResult> identifyCustomer({
     required String visitorId,
     required String token,

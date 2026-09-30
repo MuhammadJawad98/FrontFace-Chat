@@ -56,7 +56,7 @@ class FrontFaceAttachmentsConfig {
 }
 
 /// Kind of pending attachment.
-enum FrontFaceAttachmentKind { location, image, audio }
+enum FrontFaceAttachmentKind { location, image, audio, file }
 
 /// Audio transcript pipeline status from `MessagePart.processingStatus`.
 enum FrontFaceMediaProcessingStatus { pending, ready, failed }
@@ -122,6 +122,12 @@ class FrontFaceAttachmentPayload {
   /// Optimistic send state — [uploading] shows a loader on the bubble.
   final FrontFaceAttachmentUploadStatus? uploadStatus;
 
+  /// PDF / file part fields (`payload.filename`, `byte_size`, `page_count`).
+  final String? fileName;
+  final String? mimeType;
+  final int? byteSize;
+  final int? pageCount;
+
   const FrontFaceAttachmentPayload({
     required this.kind,
     this.url,
@@ -133,6 +139,10 @@ class FrontFaceAttachmentPayload {
     this.derivedText,
     this.processingStatus,
     this.uploadStatus,
+    this.fileName,
+    this.mimeType,
+    this.byteSize,
+    this.pageCount,
   });
 
   bool get isUploading =>
@@ -153,6 +163,10 @@ class FrontFaceAttachmentPayload {
     FrontFaceMediaProcessingStatus? processingStatus,
     FrontFaceAttachmentUploadStatus? uploadStatus,
     bool clearUploadStatus = false,
+    String? fileName,
+    String? mimeType,
+    int? byteSize,
+    int? pageCount,
   }) {
     return FrontFaceAttachmentPayload(
       kind: kind ?? this.kind,
@@ -166,6 +180,10 @@ class FrontFaceAttachmentPayload {
       processingStatus: processingStatus ?? this.processingStatus,
       uploadStatus:
           clearUploadStatus ? null : (uploadStatus ?? this.uploadStatus),
+      fileName: fileName ?? this.fileName,
+      mimeType: mimeType ?? this.mimeType,
+      byteSize: byteSize ?? this.byteSize,
+      pageCount: pageCount ?? this.pageCount,
     );
   }
 
@@ -196,6 +214,11 @@ class FrontFaceAttachmentPayload {
         return '🖼️ ${s.imageAttachment}';
       case FrontFaceAttachmentKind.audio:
         return '🎵 ${s.audioAttachment}';
+      case FrontFaceAttachmentKind.file:
+        final name = (fileName != null && fileName!.trim().isNotEmpty)
+            ? fileName!.trim()
+            : s.documentAttachment;
+        return '📄 $name';
     }
   }
 
@@ -238,6 +261,10 @@ class FrontFaceAttachmentPayload {
           label: raw['label']?.toString(),
           accuracyMeters: (raw['accuracy_m'] as num?)?.toDouble(),
           uploadStatus: _parseUploadStatus(raw['upload_status']?.toString()),
+          fileName: raw['filename']?.toString() ?? raw['fileName']?.toString(),
+          mimeType: raw['mime_type']?.toString(),
+          byteSize: (raw['byte_size'] as num?)?.toInt(),
+          pageCount: (raw['page_count'] as num?)?.toInt(),
         );
       }
     }
@@ -274,6 +301,19 @@ class FrontFaceAttachmentPayload {
       return FrontFaceAttachmentPayload(
         kind: FrontFaceAttachmentKind.audio,
         url: urlMatch,
+      );
+    }
+
+    if (content.contains('📄') ||
+        RegExp(r'https?://\S+\.pdf', caseSensitive: false).hasMatch(content)) {
+      final urlMatch =
+          RegExp(r'https?://\S+').firstMatch(content)?.group(0);
+      final first = content.split('\n').first.replaceFirst('📄', '').trim();
+      return FrontFaceAttachmentPayload(
+        kind: FrontFaceAttachmentKind.file,
+        url: urlMatch,
+        fileName: first.isNotEmpty ? first : null,
+        mimeType: 'application/pdf',
       );
     }
 

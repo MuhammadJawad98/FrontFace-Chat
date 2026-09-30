@@ -7,6 +7,8 @@ abstract class FrontFaceRealtimeBridge {
   bool get isConnected;
 
   /// Connects with [apiKey] as the socket apikey and [jwt] via [setAuth].
+  ///
+  /// Per LIVE_REPLIES: never pass the conversation JWT as `apikey`.
   Future<bool> connect({
     required String supabaseUrl,
     required String apiKey,
@@ -14,6 +16,7 @@ abstract class FrontFaceRealtimeBridge {
     required String conversationId,
     required void Function(String event, Map<String, dynamic> payload) onEvent,
     required void Function() onDisconnected,
+    void Function()? onSubscribed,
   });
 
   Future<void> refreshAuth(String jwt);
@@ -38,6 +41,7 @@ class FrontFaceSupabaseRealtimeBridge implements FrontFaceRealtimeBridge {
     required String conversationId,
     required void Function(String event, Map<String, dynamic> payload) onEvent,
     required void Function() onDisconnected,
+    void Function()? onSubscribed,
   }) async {
     await disconnect();
 
@@ -95,6 +99,7 @@ class FrontFaceSupabaseRealtimeBridge implements FrontFaceRealtimeBridge {
       ..subscribe((status, error) {
         if (status == RealtimeSubscribeStatus.subscribed) {
           _connected = true;
+          onSubscribed?.call();
           if (!completer.isCompleted) completer.complete(true);
         } else if (status == RealtimeSubscribeStatus.channelError ||
             status == RealtimeSubscribeStatus.timedOut ||

@@ -1,3 +1,14 @@
+## 1.5.14
+
+* Documents: receive agent PDF parts (`type: file`) — request `partTypes=file` on history / `messages/public`, show a document card (filename · size · pages), download+open on tap via `open_filex`, refresh signed URL on expiry.
+* Skip unknown `parts[].type` values so future part types never break history parsing.
+* On Realtime `message:new`, catch up via `messages/public?partTypes=file` (events carry no `parts`).
+* Live Replies: Realtime is primary for agent messages — stop `messages/public` polling while `SUBSCRIBED`; poll every 5s only as fallback when the socket is down.
+* Subscribe as soon as a `conversationId` exists (not only after handoff).
+* Status via `GET /status` on open/resume/first agent reply and every 60s.
+* On app resume: one `messages/public?after=` catch-up, then reconnect Realtime; disconnect Realtime on background.
+* Resolved/closed conversations stay on the same id — sending again reopens the same thread (no forked ensure).
+
 ## 1.5.13
 
 * Fix: every distinct message id from history/API is shown — no content-based dropping for customer or agent text. Local optimistic bubbles only promote to a near-in-time server copy so an older repeated "hello" cannot replace a just-sent one.

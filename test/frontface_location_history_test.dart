@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontface_chat/frontface_chat.dart';
 import 'package:frontface_chat/src/services/frontface_api_service.dart';
+import 'package:frontface_chat/src/services/frontface_app_session_cache.dart';
 import 'package:frontface_chat/src/services/frontface_visitor_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,6 +23,9 @@ final _lead = {
 };
 
 void main() {
+  setUp(() {
+    FrontFaceAppSessionCache.clear();
+  });
   test(
     'history keeps every location message even when coords match',
     () async {

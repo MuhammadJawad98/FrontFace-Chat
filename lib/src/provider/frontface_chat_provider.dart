@@ -9,6 +9,7 @@ import '../config/frontface_chat_config.dart';
 import '../config/frontface_chat_strings.dart';
 import '../models/frontface_models.dart';
 import '../services/frontface_api_service.dart';
+import '../services/frontface_app_session_cache.dart';
 import '../services/frontface_realtime_bridge.dart';
 import '../services/frontface_visitor_store.dart';
 
@@ -36,13 +37,20 @@ class FrontFaceChatProvider extends ChangeNotifier
 
   final List<FrontFaceChatMessage> _messages = [];
   Timer? _pollTimer;
+  Timer? _statusPollTimer;
   Timer? _typingStopTimer;
   Timer? _presenceHeartbeatTimer;
+  /// Bumps whenever presence should stop / restart — prevents overlapping timers
+  /// when `_startPresenceHeartbeat` is entered concurrently.
+  int _presenceEpoch = 0;
   Timer? _realtimeRefreshTimer;
-  int _pollTick = 0;
   String? _lastMessageAt;
   bool _disposed = false;
   bool _pollInFlight = false;
+  bool _liveModeDesired = false;
+  Future<void>? _bootstrapAfterHistoryInFlight;
+  Future<void>? _embedConfigLoadInFlight;
+  Future<void>? _handoffLoadInFlight;
   bool _customerIsTyping = false;
   bool _agentTyping = false;
   bool _isAppForeground = true;
@@ -125,9 +133,8 @@ class FrontFaceChatProvider extends ChangeNotifier
 
   bool get canChat =>
       !_isInitializing &&
-      !_showLeadForm &&
-      _status != FrontFaceConversationStatus.resolved &&
-      _status != FrontFaceConversationStatus.closed;
+      !_showLeadForm;
+  // LIVE_REPLIES: resolved/closed still allow send — same conversation reopens.
 
   bool get showHandoffButton =>
       _handoffAvailability.showLiveHandoffButton &&
@@ -154,6 +161,10 @@ class FrontFaceChatProvider extends ChangeNotifier
   bool get isAgentActive =>
       _status == FrontFaceConversationStatus.agentActive;
 
+  /// LIVE_REPLIES §8 critical path:
+  /// 1) ensure-conversation (once per app session)
+  /// 2) customers/history (skipped while a required lead form is pending)
+  /// Then hide the loader. Presence / Realtime run after, in parallel.
   Future<void> initialize() async {
     if (_isInitializing) return;
     _isInitializing = true;
@@ -163,59 +174,225 @@ class FrontFaceChatProvider extends ChangeNotifier
 
     try {
       await _resolveVisitorId();
-      _embedConfig = await _api.fetchEmbedConfig(_visitorId!);
-      if (!_embedConfig.enabled) {
-        throw FrontFaceApiException(
-          code: 'DISABLED',
-          message: _strings.chatUnavailable,
-        );
-      }
-
-      _leadFormCompleted = await _store.hasCompletedLeadForm(
-        _chatConfig.projectId,
-      );
-      if (!_leadFormCompleted) {
-        _leadFormCompleted = await _api.getLeadCaptureStatus(_visitorId!);
-        if (_leadFormCompleted) {
-          await _store.setLeadFormCompleted(_chatConfig.projectId, true);
-        }
-      }
 
       _messages.clear();
       _lastMessageAt = null;
-      _sessionId = await _store.getSessionId(_chatConfig.projectId);
-      _sessionToken = await _store.getSessionToken(_chatConfig.projectId);
+      _leadFormCompleted = await _store.hasCompletedLeadForm(
+        _chatConfig.projectId,
+      );
 
-      // Lead capture requirement wins even over an already-stored session —
-      // a stored sessionId only means the conversation exists server-side,
-      // not that this visitor has been identified. Without this check
-      // first, a session created before lead capture was required (or
-      // before requireLeadCaptureBeforeChat was turned on) would hydrate
-      // straight past the form.
+      // 1️⃣ ensure-conversation — once per app session, reuse token after.
+      await _ensureConversationForAppSession();
+      if (_disposed) return;
+
+      // Embed + handoff gate greeting vs lead form / button on first paint.
+      await Future.wait<void>([
+        _loadEmbedConfigCached(),
+        _loadHandoffCached(),
+      ]);
+      if (_disposed) return;
+
       if (_shouldShowLeadFormBeforeChat()) {
+        // Form-first: do not hydrate transcript until submit.
         _showLeadForm = true;
-        // Never show a local greeting while the lead form is pending.
-        _messages.clear();
-      } else {
-        try {
-          await _resolveAndHydrateHistory();
-        } on FrontFaceApiException catch (e) {
-          if (!_isSessionStale(e)) rethrow;
-          await _recoverStaleSession();
+      } else if (_sessionId != null) {
+        // 2️⃣ history — hide loader as soon as this returns.
+        await _mergeServerHistory();
+        if (_disposed) return;
+        if (_messages.isEmpty &&
+            _status != FrontFaceConversationStatus.resolved &&
+            _status != FrontFaceConversationStatus.closed) {
+          _appendGreetingIfNeeded();
         }
-      }
-
-      _handoffAvailability = await _api.getHandoffAvailability(_visitorId!);
-      if (_handoffAvailability.showOfflineForm) {
-        _showOfflineForm = true;
+      } else {
+        _appendGreetingIfNeeded();
       }
     } on FrontFaceApiException catch (e) {
-      _error = e.message;
+      if (_isSessionStale(e)) {
+        try {
+          FrontFaceAppSessionCache.clear();
+          await _recoverStaleSession();
+        } on FrontFaceApiException catch (e2) {
+          _error = e2.message;
+        } catch (_) {
+          _error = _strings.failedToLoadChat;
+        }
+      } else {
+        _error = e.message;
+      }
     } catch (_) {
       _error = _strings.failedToLoadChat;
     } finally {
       _isInitializing = false;
       _notify();
+    }
+
+    // Live side-effects after history — do not block the screen.
+    if (!_disposed &&
+        _sessionId != null &&
+        _error == null &&
+        !_showLeadForm) {
+      unawaited(_bootstrapAfterHistory());
+    }
+  }
+
+  /// Ensures a session token exists for this app process.
+  ///
+  /// Reuses [FrontFaceAppSessionCache] when the same visitor already ensured
+  /// this session. Otherwise POSTs ensure-conversation once.
+  Future<void> _ensureConversationForAppSession() async {
+    if (_visitorId == null) return;
+
+    if (FrontFaceAppSessionCache.hasSessionFor(_visitorId!)) {
+      _sessionId = FrontFaceAppSessionCache.conversationId;
+      _sessionToken = FrontFaceAppSessionCache.sessionToken;
+      await _store.saveSessionId(_chatConfig.projectId, _sessionId);
+      await _store.saveSessionToken(_chatConfig.projectId, _sessionToken);
+      return;
+    }
+
+    // Prefer persisted id so the server resumes the same thread.
+    _sessionId ??= await _store.getSessionId(_chatConfig.projectId);
+    _sessionToken ??= await _store.getSessionToken(_chatConfig.projectId);
+
+    final ensured = await _api.ensureConversation(
+      visitorId: _visitorId!,
+      conversationId: _sessionId,
+    );
+    await _applySessionFromResponse(ensured);
+
+    if (_sessionId != null &&
+        _sessionId!.isNotEmpty &&
+        _sessionToken != null &&
+        _sessionToken!.isNotEmpty) {
+      FrontFaceAppSessionCache.setSession(
+        visitorId: _visitorId!,
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken!,
+      );
+    }
+  }
+
+  /// Post-history work (LIVE_REPLIES §8): config, handoff, status, presence,
+  /// realtime-token — all non-blocking for the loader.
+  Future<void> _bootstrapAfterHistory() async {
+    if (_disposed || _visitorId == null || _sessionId == null) return;
+    if (_bootstrapAfterHistoryInFlight != null) {
+      return _bootstrapAfterHistoryInFlight!;
+    }
+
+    _bootstrapAfterHistoryInFlight = _runBootstrapAfterHistory();
+    try {
+      await _bootstrapAfterHistoryInFlight;
+    } finally {
+      _bootstrapAfterHistoryInFlight = null;
+    }
+  }
+
+  Future<void> _runBootstrapAfterHistory() async {
+    if (_disposed || _visitorId == null || _sessionId == null) return;
+
+    unawaited(_loadEmbedConfigCached());
+    unawaited(_loadHandoffCached());
+    unawaited(_pollStatus(forceAgentName: true));
+
+    if (_disposed) return;
+    _liveModeDesired = true;
+    _startStatusPolling(pollNow: false);
+    unawaited(_startPresenceHeartbeat());
+
+    try {
+      await _loadEmbedConfigCached();
+      if (_disposed || !_liveModeDesired || !_isAppForeground) return;
+
+      // Lead form / greeting already applied in [initialize]; keep a safety net
+      // for callers that enter live mode without going through that path.
+      if (_shouldShowLeadFormBeforeChat() && !_showLeadForm) {
+        _showLeadForm = true;
+        final greeting = _embedConfig.greeting.trim();
+        if (greeting.isNotEmpty) {
+          _messages.removeWhere(
+            (m) =>
+                m.id.startsWith('local_') &&
+                m.senderType == FrontFaceSenderType.ai &&
+                m.content == greeting,
+          );
+        }
+        _notify();
+        return;
+      }
+
+      await _startRealtime();
+      if (_disposed || !_liveModeDesired) return;
+      if (!_realtime.isConnected) {
+        _startFallbackPolling();
+      } else {
+        _stopFallbackPolling();
+      }
+    } catch (_) {
+      if (!_disposed && _liveModeDesired) _startFallbackPolling();
+    }
+  }
+
+  Future<void> _loadEmbedConfigCached() async {
+    if (_disposed || _visitorId == null) return;
+    final cached = FrontFaceAppSessionCache.embedConfig;
+    if (cached != null) {
+      _embedConfig = cached;
+      return;
+    }
+    if (_embedConfigLoadInFlight != null) {
+      await _embedConfigLoadInFlight;
+      return;
+    }
+
+    _embedConfigLoadInFlight = () async {
+      final config = await _api.fetchEmbedConfig(_visitorId!);
+      if (_disposed) return;
+      _embedConfig = config;
+      FrontFaceAppSessionCache.embedConfig = config;
+      if (!config.enabled) {
+        _error = _strings.chatUnavailable;
+      }
+      _notify();
+    }();
+
+    try {
+      await _embedConfigLoadInFlight;
+    } finally {
+      _embedConfigLoadInFlight = null;
+    }
+  }
+
+  Future<void> _loadHandoffCached() async {
+    if (_disposed || _visitorId == null) return;
+    final cached = FrontFaceAppSessionCache.handoff;
+    if (cached != null) {
+      _handoffAvailability = cached;
+      if (cached.showOfflineForm) _showOfflineForm = true;
+      _notify();
+      return;
+    }
+    if (_handoffLoadInFlight != null) {
+      await _handoffLoadInFlight;
+      return;
+    }
+
+    _handoffLoadInFlight = () async {
+      try {
+        final handoff = await _api.getHandoffAvailability(_visitorId!);
+        if (_disposed) return;
+        _handoffAvailability = handoff;
+        FrontFaceAppSessionCache.handoff = handoff;
+        if (handoff.showOfflineForm) _showOfflineForm = true;
+        _notify();
+      } catch (_) {}
+    }();
+
+    try {
+      await _handoffLoadInFlight;
+    } finally {
+      _handoffLoadInFlight = null;
     }
   }
 
@@ -244,30 +421,9 @@ class FrontFaceChatProvider extends ChangeNotifier
     }
   }
 
-  /// Resolves the visitor's active conversation, then loads full transcript.
-  ///
-  /// Always calls `ensure-conversation`, passing the stored [sessionId] when
-  /// present so the server can **resume** that thread instead of forking a
-  /// new empty one each launch. Unified history still merges older episodes.
-  Future<void> _resolveAndHydrateHistory() async {
-    if (_visitorId == null) return;
-
-    final ensured = await _api.ensureConversation(
-      visitorId: _visitorId!,
-      conversationId: _sessionId,
-    );
-    await _applySessionFromResponse(ensured);
-
-    if (_sessionId != null) {
-      await _hydrateConversation();
-    } else {
-      _appendGreetingIfNeeded();
-    }
-  }
-
   /// Links the logged-in user to this visitor using a JWT from your backend.
   ///
-  /// Your backend team mints the token (see `IDENTITY_VERIFICATION_GUIDE.md`).
+  /// Your backend team mints the token (JWT with verified customer claims).
   /// Never blocks chat — failures throw [FrontFaceIdentifyException].
   Future<FrontFaceIdentifyResult> identify(String token) async {
     if (_visitorId == null) {
@@ -289,6 +445,7 @@ class FrontFaceChatProvider extends ChangeNotifier
   /// Logout helper: rotate visitor id and clear this project's session/chat.
   Future<void> resetUser() async {
     await _leaveHandoffSideEffects(sendOffline: false);
+    FrontFaceAppSessionCache.clear();
     _visitorId = await _store.rotateVisitorId();
     _sessionId = null;
     _sessionToken = null;
@@ -312,7 +469,7 @@ class FrontFaceChatProvider extends ChangeNotifier
     } else {
       _appendGreetingIfNeeded();
     }
-    _handoffAvailability = await _api.getHandoffAvailability(_visitorId!);
+    unawaited(_loadHandoffCached());
     _notify();
   }
 
@@ -458,6 +615,7 @@ class FrontFaceChatProvider extends ChangeNotifier
       FrontFaceAttachmentKind.image => cfg.enableImages,
       FrontFaceAttachmentKind.audio => cfg.enableAudio,
       FrontFaceAttachmentKind.location => false,
+      FrontFaceAttachmentKind.file => false,
     };
     if (!allowed) return;
 
@@ -475,12 +633,13 @@ class FrontFaceChatProvider extends ChangeNotifier
     final localId = 'local_${DateTime.now().microsecondsSinceEpoch}';
     final provisional = switch (pending.kind) {
       FrontFaceAttachmentKind.image => FrontFaceMessagePart.localImage(
-          localPath: pending.path,
-        ),
+        localPath: pending.path,
+      ),
       FrontFaceAttachmentKind.audio => FrontFaceMessagePart.localAudio(
-          localPath: pending.path,
-        ),
+        localPath: pending.path,
+      ),
       FrontFaceAttachmentKind.location => null,
+      FrontFaceAttachmentKind.file => null,
     };
     final placeholder = FrontFaceAttachmentPayload(
       kind: pending.kind,
@@ -666,6 +825,8 @@ class FrontFaceChatProvider extends ChangeNotifier
     } else {
       _handoffAvailability = await _api.getHandoffAvailability(_visitorId!);
       _evaluateLeadFormAfterSend();
+      // Keep Realtime alive for any late agent activity.
+      await _enterLiveMode();
     }
   }
 
@@ -801,29 +962,55 @@ class FrontFaceChatProvider extends ChangeNotifier
     await _enterHandoffMode();
   }
 
-  /// Enter live handoff: merge in the server history, bookmark the newest
-  /// `createdAt`, then poll with `?after=`.
+  /// Enter live handoff: merge server history, then start Realtime (primary).
   ///
-  /// The chat HTTP response and GET /messages/public can both contain the same
-  /// handoff confirmation ("I'm connecting you…"). Local bubbles have no
-  /// server id, so id-based de-dupe alone can't catch that — but we merge
-  /// (never clear) the local transcript, relying on _appendMessage's
-  /// sender+content de-dupe to drop the local copy once the server one
-  /// arrives.
-  ///
-  /// Message recovery still uses HTTP polling. Realtime is used for ephemeral
-  /// agent typing (and optional status events); presence/typing POSTs go to
-  /// the dashboard.
+  /// Per LIVE_REPLIES: do **not** poll `messages/public` while subscribed.
+  /// Polling is fallback-only when the socket cannot connect.
   Future<void> _enterHandoffMode() async {
     try {
       await _mergeServerHistory();
     } catch (_) {
-      // Keep provisional local messages; incremental polls may still catch up.
+      // Keep provisional local messages; Realtime / fallback poll may catch up.
     }
     _updateStatusBanner();
-    _startPolling();
-    await _startPresenceHeartbeat();
-    await _startRealtime();
+    // Trust handoff/message status — don't immediately poll /status which may
+    // still report ai_active before the server has flipped.
+    await _enterLiveMode(pollStatusNow: false);
+  }
+
+  /// Subscribe + presence + status as soon as a conversationId exists.
+  ///
+  /// [pollStatusNow] — skip when caller just fetched status (avoids duplicate
+  /// `/status` on open). Presence + Realtime run in parallel.
+  Future<void> _enterLiveMode({bool pollStatusNow = true}) async {
+    if (_disposed || _sessionId == null || _visitorId == null) return;
+    if (!_isAppForeground) return;
+    _liveModeDesired = true;
+    _startStatusPolling(pollNow: pollStatusNow);
+    // Presence + Realtime are independent — don't serialize them.
+    await Future.wait<void>([
+      _startPresenceHeartbeat(),
+      _startRealtime(),
+    ]);
+    // Fallback poll only if Realtime did not subscribe.
+    if (!_realtime.isConnected) {
+      _startFallbackPolling();
+    } else {
+      _stopFallbackPolling();
+    }
+  }
+
+  Future<void> _leaveLiveMode({required bool sendOffline}) async {
+    _liveModeDesired = false;
+    stopTyping();
+    _stopPresenceHeartbeat();
+    _stopStatusPolling();
+    _stopFallbackPolling();
+    _clearAgentTyping();
+    await _stopRealtime();
+    if (sendOffline && _visitorId != null && _sessionId != null) {
+      await _sendPresence('offline');
+    }
   }
 
   /// Composer keystrokes → dashboard typing indicator (agent_active only).
@@ -932,6 +1119,13 @@ class FrontFaceChatProvider extends ChangeNotifier
       _lifecycleObserving = false;
     }
     stopTyping();
+    // Cancel timers synchronously so widget tests / rapid dispose cannot
+    // leave pending FakeAsync timers behind.
+    _liveModeDesired = false;
+    _stopPresenceHeartbeat();
+    _stopStatusPolling();
+    _stopFallbackPolling();
+    _clearAgentTyping();
     unawaited(_leaveHandoffSideEffects(sendOffline: true));
     super.dispose();
   }
@@ -941,13 +1135,13 @@ class FrontFaceChatProvider extends ChangeNotifier
     switch (state) {
       case AppLifecycleState.resumed:
         _isAppForeground = true;
-        if (isInHandoff) {
-          unawaited(_startPresenceHeartbeat());
-          unawaited(_startRealtime());
+        if (_liveModeDesired || _sessionId != null) {
+          // One catch-up fetch, then reconnect Realtime (LIVE_REPLIES §4.5).
+          unawaited(_onAppResumed());
         }
         break;
       case AppLifecycleState.inactive:
-        if (isInHandoff) unawaited(_sendPresence('idle'));
+        if (_liveModeDesired) unawaited(_sendPresence('idle'));
         break;
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
@@ -955,77 +1149,69 @@ class FrontFaceChatProvider extends ChangeNotifier
         _isAppForeground = false;
         stopTyping();
         _stopPresenceHeartbeat();
+        _stopFallbackPolling();
         _clearAgentTyping();
         unawaited(_stopRealtime());
-        if (isInHandoff) unawaited(_sendPresence('offline'));
+        if (_liveModeDesired) unawaited(_sendPresence('offline'));
         break;
     }
   }
 
-  Future<void> _hydrateConversation() async {
-    if (_visitorId == null || _sessionId == null) return;
-
-    // initialize() already cleared `_messages` — append server history directly.
-    await _mergeServerHistory();
-
-    final statusData = await _api.getConversationStatus(
-      visitorId: _visitorId!,
-      conversationId: _sessionId!,
-      sessionToken: _sessionToken,
-    );
-    _applyStatus(statusData['status']?.toString());
-    _agentName = statusData['assignedAgent']?['name']?.toString();
-    _queuePosition = statusData['queuePosition'] as int?;
-
-    // Ended episode + history on screen: open an active thread so the user can
-    // keep chatting without tapping "Start new chat". Keep the transcript.
-    if (_status == FrontFaceConversationStatus.resolved ||
-        _status == FrontFaceConversationStatus.closed) {
-      await _resumeActiveConversationKeepingHistory();
-    }
-
-    if (isInHandoff) {
-      _updateStatusBanner();
-      _startPolling();
-      await _startPresenceHeartbeat();
-      await _startRealtime();
-    } else if (_messages.isEmpty) {
-      _appendGreetingIfNeeded();
-    }
-  }
-
-  /// After a closed/resolved conversation is hydrated, ensure a writable
-  /// `ai_active` session without clearing messages or showing start-new-chat.
-  Future<void> _resumeActiveConversationKeepingHistory() async {
-    if (_visitorId == null) return;
-    final ensured = await _api.ensureConversation(
-      visitorId: _visitorId!,
-      // Omit the ended id so the server returns/creates an active thread.
-    );
-    await _applySessionFromResponse(ensured);
-    _status = FrontFaceConversationStatus.aiActive;
-    _statusBanner = null;
-    _agentName = null;
-    _queuePosition = null;
-    _showOfflineForm = false;
-  }
-
-  void _startPolling() {
-    _stopPolling();
-    if (!isInHandoff || _sessionId == null || _visitorId == null) return;
-
-    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
-      if (_disposed || _sessionId == null || _visitorId == null) return;
-      _pollTick++;
+  Future<void> _onAppResumed() async {
+    if (_disposed || _sessionId == null || _visitorId == null) return;
+    try {
       await _pollMessages();
-      if (_pollTick % 5 == 0) await _pollStatus();
+      await _pollStatus(forceAgentName: true);
+    } catch (_) {}
+    await _enterLiveMode();
+  }
+
+  /// Fallback-only poll while Realtime is down (LIVE_REPLIES §4.5).
+  void _startFallbackPolling() {
+    _stopFallbackPolling();
+    if (_disposed ||
+        !_liveModeDesired ||
+        _sessionId == null ||
+        _visitorId == null) {
+      return;
+    }
+    if (_realtime.isConnected) return;
+
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (_disposed || _sessionId == null || _visitorId == null) return;
+      if (_realtime.isConnected) {
+        _stopFallbackPolling();
+        return;
+      }
+      await _pollMessages();
     });
   }
 
-  void _stopPolling() {
+  void _stopFallbackPolling() {
     _pollTimer?.cancel();
     _pollTimer = null;
-    _pollTick = 0;
+  }
+
+  void _startStatusPolling({bool pollNow = true}) {
+    _stopStatusPolling();
+    if (_disposed ||
+        !_liveModeDesired ||
+        _sessionId == null ||
+        _visitorId == null) {
+      return;
+    }
+
+    // Immediate status, then every 60s to catch "resolved" (LIVE_REPLIES §6).
+    if (pollNow) unawaited(_pollStatus(forceAgentName: true));
+    _statusPollTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
+      if (_disposed || !_liveModeDesired) return;
+      await _pollStatus();
+    });
+  }
+
+  void _stopStatusPolling() {
+    _statusPollTimer?.cancel();
+    _statusPollTimer = null;
   }
 
   Future<void> _pollMessages() async {
@@ -1055,7 +1241,34 @@ class FrontFaceChatProvider extends ChangeNotifier
     }
   }
 
-  Future<void> _pollStatus() async {
+  /// Re-fetch recent public messages so a document card can get a fresh signed
+  /// `url` after expiry (DOCUMENTS_GUIDE §4).
+  Future<String?> refreshDocumentUrl(String messageId) async {
+    if (_visitorId == null || _sessionId == null) return null;
+    try {
+      final messages = await _api.fetchMessages(
+        visitorId: _visitorId!,
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken,
+      );
+      for (final message in messages) {
+        if (message.id != messageId) continue;
+        final idx = _messages.indexWhere((m) => m.id == messageId);
+        if (idx >= 0) {
+          _messages[idx] = message;
+          _notify();
+        } else {
+          _appendMessage(message);
+          _notify();
+        }
+        return message.attachment?.url;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> _pollStatus({bool forceAgentName = false}) async {
+    if (_visitorId == null || _sessionId == null) return;
     try {
       final statusData = await _api.getConversationStatus(
         visitorId: _visitorId!,
@@ -1064,13 +1277,20 @@ class FrontFaceChatProvider extends ChangeNotifier
       );
       final wasAgentActive = isAgentActive;
       _applyStatus(statusData['status']?.toString());
-      _agentName = statusData['assignedAgent']?['name']?.toString();
+      final name = statusData['assignedAgent']?['name']?.toString();
+      if (name != null && name.isNotEmpty) {
+        _agentName = name;
+      } else if (forceAgentName) {
+        _agentName = name;
+      }
       _queuePosition = statusData['queuePosition'] as int?;
       _updateStatusBanner();
 
       if (_status == FrontFaceConversationStatus.resolved ||
           _status == FrontFaceConversationStatus.closed) {
-        await _leaveHandoffSideEffects(sendOffline: true);
+        // Stop live sockets but keep transcript + ended banner.
+        await _leaveLiveMode(sendOffline: true);
+        _liveModeDesired = false;
       } else if (wasAgentActive && !isAgentActive) {
         stopTyping();
         _clearAgentTyping();
@@ -1098,13 +1318,13 @@ class FrontFaceChatProvider extends ChangeNotifier
       _sessionStaleCodes.contains(error.code);
 
   /// Handles a 403 SESSION_* by starting a fresh session flow:
-  /// clear the chat, drop the stale token, and (when lead capture is
-  /// enabled) show the lead form again. The session and chatbot greeting
-  /// are created only when the form is submitted (`assembledGreeting`).
+  /// clear the chat, drop the stale token, and (when lead capture is on) show
+  /// the form before creating a new session — same as [startNewChat].
   ///
   /// No user-facing "session expired" error is shown.
   Future<void> _recoverStaleSession() async {
     await _leaveHandoffSideEffects(sendOffline: false);
+    FrontFaceAppSessionCache.clear();
     _sessionId = null;
     _sessionToken = null;
     _messages.clear();
@@ -1117,12 +1337,28 @@ class FrontFaceChatProvider extends ChangeNotifier
     await _store.saveSessionId(_chatConfig.projectId, null);
     await _store.saveSessionToken(_chatConfig.projectId, null);
 
+    // Embed may not be loaded yet (SESSION_INVALID during initialize).
+    if (_visitorId != null) {
+      try {
+        await _loadEmbedConfigCached();
+      } catch (_) {}
+    }
+
+    // Lead capture on → form first; session + greeting after submit.
     if (_embedConfig.leadCaptureEnabled) {
       _leadFormCompleted = false;
       await _store.setLeadFormCompleted(_chatConfig.projectId, false);
       _showLeadForm = true;
+      return;
+    }
+
+    _showLeadForm = false;
+    await _ensureConversationForAppSession();
+    if (_sessionId != null) {
+      await _mergeServerHistory();
+      if (_messages.isEmpty) _appendGreetingIfNeeded();
+      unawaited(_bootstrapAfterHistory());
     } else {
-      _showLeadForm = false;
       _appendGreetingIfNeeded();
     }
   }
@@ -1140,6 +1376,18 @@ class FrontFaceChatProvider extends ChangeNotifier
     if (newSessionToken != null && newSessionToken.isNotEmpty) {
       _sessionToken = newSessionToken;
       await _store.saveSessionToken(_chatConfig.projectId, newSessionToken);
+    }
+
+    if (_visitorId != null &&
+        _sessionId != null &&
+        _sessionId!.isNotEmpty &&
+        _sessionToken != null &&
+        _sessionToken!.isNotEmpty) {
+      FrontFaceAppSessionCache.setSession(
+        visitorId: _visitorId!,
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken!,
+      );
     }
   }
 
@@ -1533,6 +1781,7 @@ class FrontFaceChatProvider extends ChangeNotifier
             }
           case FrontFaceMessagePartType.image:
           case FrontFaceMessagePartType.audio:
+          case FrontFaceMessagePartType.file:
             if (left.mediaAssetId != null &&
                 left.mediaAssetId == right.mediaAssetId) {
               return true;
@@ -1551,6 +1800,8 @@ class FrontFaceChatProvider extends ChangeNotifier
                 _hasSingleUploadingProvisionalOfType(left.type)) {
               return true;
             }
+          case FrontFaceMessagePartType.unknown:
+            break;
         }
       }
     }
@@ -1781,14 +2032,7 @@ class FrontFaceChatProvider extends ChangeNotifier
   }
 
   Future<void> _leaveHandoffSideEffects({required bool sendOffline}) async {
-    stopTyping();
-    _stopPresenceHeartbeat();
-    _clearAgentTyping();
-    _stopPolling();
-    await _stopRealtime();
-    if (sendOffline && _visitorId != null && _sessionId != null) {
-      await _sendPresence('offline');
-    }
+    await _leaveLiveMode(sendOffline: sendOffline);
   }
 
   Future<void> _postTyping(bool isTyping) async {
@@ -1816,27 +2060,40 @@ class FrontFaceChatProvider extends ChangeNotifier
   }
 
   Future<void> _startPresenceHeartbeat() async {
-    if (!isInHandoff || !_isAppForeground) return;
+    if (!_liveModeDesired || !_isAppForeground) return;
+    if (_visitorId == null || _sessionId == null) return;
+
+    // Cancel any prior timer and invalidate in-flight starts.
     _stopPresenceHeartbeat();
+    final epoch = _presenceEpoch;
     await _sendPresence('online');
+
+    // Another start/stop happened while we awaited — do not create a 2nd timer.
+    if (_disposed || epoch != _presenceEpoch) return;
+    if (!_liveModeDesired || !_isAppForeground) return;
+    if (_visitorId == null || _sessionId == null) return;
+
     _presenceHeartbeatTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) {
-        if (_disposed || !isInHandoff || !_isAppForeground) return;
+        if (_disposed || !_liveModeDesired || !_isAppForeground) return;
+        if (epoch != _presenceEpoch) return;
         unawaited(_sendPresence('online'));
       },
     );
   }
 
   void _stopPresenceHeartbeat() {
+    _presenceEpoch++;
     _presenceHeartbeatTimer?.cancel();
     _presenceHeartbeatTimer = null;
   }
 
   Future<void> _startRealtime() async {
-    if (_disposed || !isInHandoff) return;
+    if (_disposed || !_liveModeDesired) return;
     if (!_embedConfig.realtime.canConnect) return;
     if (_visitorId == null || _sessionId == null) return;
+    if (!_isAppForeground) return;
 
     try {
       final tokenRes = await _api.fetchRealtimeToken(
@@ -1847,6 +2104,7 @@ class FrontFaceChatProvider extends ChangeNotifier
       final jwt = tokenRes['token']?.toString() ?? '';
       if (jwt.isEmpty) {
         _clearAgentTyping();
+        _startFallbackPolling();
         return;
       }
 
@@ -1856,20 +2114,30 @@ class FrontFaceChatProvider extends ChangeNotifier
         jwt: jwt,
         conversationId: _sessionId!,
         onEvent: _onRealtimeEvent,
+        onSubscribed: () {
+          // LIVE_REPLIES #3: stop polling once the channel is live.
+          _stopFallbackPolling();
+        },
         onDisconnected: () {
           _clearAgentTyping();
+          if (_liveModeDesired && _isAppForeground) {
+            _startFallbackPolling();
+          }
           _notify();
         },
       );
 
       if (!ok) {
         _clearAgentTyping();
+        _startFallbackPolling();
         return;
       }
 
+      _stopFallbackPolling();
       _scheduleRealtimeTokenRefresh(tokenRes['expiresAt']);
     } catch (_) {
       _clearAgentTyping();
+      _startFallbackPolling();
     }
   }
 
@@ -1901,7 +2169,7 @@ class FrontFaceChatProvider extends ChangeNotifier
   }
 
   Future<void> _refreshRealtimeToken() async {
-    if (_disposed || !isInHandoff) return;
+    if (_disposed || !_liveModeDesired) return;
     if (_visitorId == null || _sessionId == null) return;
     try {
       final tokenRes = await _api.fetchRealtimeToken(
@@ -1913,6 +2181,7 @@ class FrontFaceChatProvider extends ChangeNotifier
       if (jwt.isEmpty) {
         await _stopRealtime();
         _clearAgentTyping();
+        _startFallbackPolling();
         return;
       }
       await _realtime.refreshAuth(jwt);
@@ -1920,6 +2189,7 @@ class FrontFaceChatProvider extends ChangeNotifier
     } catch (_) {
       await _stopRealtime();
       _clearAgentTyping();
+      _startFallbackPolling();
       _notify();
     }
   }
@@ -1955,16 +2225,14 @@ class FrontFaceChatProvider extends ChangeNotifier
     }
 
     if (event == 'message:new') {
-      final messageJson = data?['message'];
-      if (messageJson is! Map) return;
-      final message = FrontFaceChatMessage.fromJson(
-        Map<String, dynamic>.from(messageJson),
-      );
-      if (message.senderType == FrontFaceSenderType.customer) return;
-      // Fresh agent message implies they stopped typing.
+      // Realtime payload has no `parts` (documents would be missing). Catch up
+      // via messages/public?partTypes=file like the web widget.
       _agentTyping = false;
-      _appendMessage(message);
       _notify();
+      unawaited(_pollMessages());
+      if (_agentName == null || _agentName!.isEmpty) {
+        unawaited(_pollStatus(forceAgentName: true));
+      }
       return;
     }
 
@@ -1973,8 +2241,9 @@ class FrontFaceChatProvider extends ChangeNotifier
       final queue = data?['queuePosition'];
       if (queue is int) _queuePosition = queue;
       _applyStatus(status);
-      if (!isInHandoff) {
-        unawaited(_leaveHandoffSideEffects(sendOffline: true));
+      if (_status == FrontFaceConversationStatus.resolved ||
+          _status == FrontFaceConversationStatus.closed) {
+        unawaited(_leaveLiveMode(sendOffline: true));
       } else if (!isAgentActive) {
         stopTyping();
         _clearAgentTyping();
@@ -2013,7 +2282,7 @@ class FrontFaceChatProvider extends ChangeNotifier
       } else {
         _status = FrontFaceConversationStatus.resolved;
       }
-      unawaited(_leaveHandoffSideEffects(sendOffline: true));
+      unawaited(_leaveLiveMode(sendOffline: true));
       _updateStatusBanner();
       _notify();
     }

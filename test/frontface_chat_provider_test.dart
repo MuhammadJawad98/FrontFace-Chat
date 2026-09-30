@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontface_chat/frontface_chat.dart';
 import 'package:frontface_chat/src/services/frontface_api_service.dart';
+import 'package:frontface_chat/src/services/frontface_app_session_cache.dart';
 import 'package:frontface_chat/src/services/frontface_realtime_bridge.dart';
 import 'package:frontface_chat/src/services/frontface_visitor_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -64,6 +65,7 @@ final _leadCaptureEmailAfterConfig = {
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    FrontFaceAppSessionCache.clear();
   });
 
   group('greeting — no duplication', () {
@@ -428,7 +430,8 @@ void main() {
       () async {
         const reply =
             "I'm connecting you with a human agent now. Please hold on.";
-        final fake = FakeApiManager(testConfig);
+        final fake = FakeApiManager(testConfig)
+          ..embedConfigResponse = _realtimeEmbedConfig();
         fake.sendMessageResponder = (_) => {
               'response': reply,
               'sessionId': 'sess_1',
@@ -439,7 +442,8 @@ void main() {
               },
             };
 
-        final provider = _buildProvider(fake);
+        final realtime = FakeRealtimeBridge();
+        final provider = _buildProvider(fake, realtime: realtime);
         await provider.initialize();
 
         // History replace fails on enter-handoff — keep the provisional
@@ -456,8 +460,9 @@ void main() {
           provider.messages.where((m) => m.content == reply).single.id,
           startsWith('local_'),
         );
+        expect(realtime.isConnected, isTrue);
 
-        // Polls succeed with the server copy of the same text.
+        // Catch-up via Realtime message:new → messages/public (DOCUMENTS_GUIDE).
         fake.forcedErrorPathContains = null;
         fake.forcedError = null;
         fake.messagesResponse = [
@@ -469,7 +474,12 @@ void main() {
           },
         ];
 
-        await Future<void>.delayed(const Duration(seconds: 3));
+        realtime.emit('message:new', {
+          'payload': {
+            'data': {'id': 'ai_server_1'},
+          },
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 50));
 
         final copies =
             provider.messages.where((m) => m.content == reply).toList();
@@ -857,19 +867,27 @@ void main() {
             'available': true,
             'showButton': true,
             'buttonText': '',
-          }
-          ..sendMessageResponder = (_) => {
-                'response': 'Connecting…',
-                'sessionId': 'sess_1',
-                'sessionToken': 'tok_1',
-                'handoff': {
-                  'triggered': true,
-                  'reason': 'agent_handling',
-                },
-              };
+          };
+        fake.sendMessageResponder = (_) {
+          fake.conversationStatusResponse = {
+            'status': 'agent_active',
+            'assignedAgent': {'name': 'Sam'},
+          };
+          return {
+            'response': 'Connecting…',
+            'sessionId': 'sess_1',
+            'sessionToken': 'tok_1',
+            'handoff': {
+              'triggered': true,
+              'reason': 'agent_handling',
+            },
+          };
+        };
         final realtime = FakeRealtimeBridge();
         final provider = _buildProvider(fake, realtime: realtime);
         await provider.initialize();
+        // Let LIVE_REPLIES bootstrap settle before asserting AI-only typing.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
 
         // Still AI — typing must be ignored.
         provider.onComposerChanged('hello');
@@ -901,29 +919,28 @@ void main() {
       'handoff starts presence online and connects Realtime with apiKey + JWT',
       () async {
         final fake = FakeApiManager(testConfig)
-          ..embedConfigResponse = _realtimeEmbedConfig();
+          ..embedConfigResponse = _realtimeEmbedConfig()
+          ..conversationStatusResponse = {
+            'status': 'waiting',
+            'queuePosition': 1,
+          };
         final realtime = FakeRealtimeBridge();
         final provider = _buildProvider(fake, realtime: realtime);
         await provider.initialize();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
         await provider.requestHuman();
 
         expect(provider.isInHandoff, isTrue);
+        // Presence + Realtime may already start on initialize (LIVE_REPLIES).
         expect(
           fake.calls.where((c) => c.path.contains('/presence')),
           isNotEmpty,
         );
         expect(
-          fake.calls
-              .where((c) => c.path.contains('/presence'))
-              .last
-              .body?['status'],
-          'online',
-        );
-        expect(
           fake.calls.where((c) => c.path.contains('/realtime-token')),
           isNotEmpty,
         );
-        expect(realtime.connectCount, 1);
+        expect(realtime.connectCount, greaterThanOrEqualTo(1));
         expect(realtime.lastApiKey, 'sb_publishable_test');
         expect(realtime.lastJwt, 'jwt_test_token');
         expect(realtime.lastConversationId, 'sess_1');
@@ -1019,6 +1036,7 @@ void main() {
         };
       final provider = _buildProvider(fake);
       await provider.initialize();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(provider.showHandoffButton, isTrue);
     });
 
@@ -1032,6 +1050,7 @@ void main() {
         };
       final provider = _buildProvider(fake);
       await provider.initialize();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(provider.showHandoffButton, isFalse);
     });
   });
@@ -1265,7 +1284,7 @@ void main() {
     );
 
     test(
-      'closed conversation with history auto-resumes without Start new chat',
+      'closed conversation keeps same id (no forked ensure) and history',
       () async {
         SharedPreferences.setMockInitialValues({
           'frontface_visitor_id': 'mob_stable_visitor',
@@ -1295,19 +1314,10 @@ void main() {
           ..conversationStatusResponse = {'status': 'closed'}
           ..ensureConversationResponder = (body) {
             ensureCalls++;
-            final passed = body?['conversationId']?.toString();
-            if (ensureCalls == 1) {
-              expect(passed, 'sess_closed');
-              return {
-                'conversationId': 'sess_closed',
-                'sessionToken': 'tok_closed',
-              };
-            }
-            // Resume path omits ended id → active thread.
-            expect(passed, isNull);
+            expect(body?['conversationId']?.toString(), 'sess_closed');
             return {
-              'conversationId': 'sess_active',
-              'sessionToken': 'tok_active',
+              'conversationId': 'sess_closed',
+              'sessionToken': 'tok_closed',
             };
           };
 
@@ -1316,16 +1326,14 @@ void main() {
 
         expect(provider.messages.length, 2);
         expect(provider.messages.first.content, 'From yesterday');
-        expect(provider.sessionId, 'sess_active');
-        expect(provider.status, FrontFaceConversationStatus.aiActive);
+        expect(provider.sessionId, 'sess_closed');
         expect(provider.canChat, isTrue);
-        expect(provider.statusBanner, isNull);
-        expect(ensureCalls, 2);
+        expect(ensureCalls, 1);
       },
     );
 
     test(
-      'unified history paginates with nextCursor and preserves metadata/parts',
+      'unified history loads first page with partTypes=file and preserves parts',
       () async {
         SharedPreferences.setMockInitialValues({
           'frontface_visitor_id': 'mob_stable_visitor',
@@ -1342,8 +1350,6 @@ void main() {
               'content': 'Newer page',
               'createdAt': '2026-09-02T12:00:01.000Z',
             },
-          ]
-          ..customerHistoryPage2 = [
             {
               'id': 'm1',
               'senderType': 'customer',
@@ -1361,25 +1367,62 @@ void main() {
                 },
               ],
             },
+            {
+              'id': 'm_doc',
+              'senderType': 'agent',
+              'content': ' ',
+              'createdAt': '2026-08-25T10:00:01.000Z',
+              'parts': [
+                {
+                  'type': 'file',
+                  'url': 'https://cdn.example.com/inv.pdf?token=1',
+                  'payload': {
+                    'filename': 'Invoice.pdf',
+                    'mime_type': 'application/pdf',
+                    'byte_size': 1200,
+                    'page_count': 2,
+                  },
+                },
+              ],
+            },
+          ]
+          ..customerHistoryPage2 = [
+            {
+              'id': 'older',
+              'senderType': 'customer',
+              'content': 'older page should not auto-load',
+              'createdAt': '2026-08-01T10:00:00.000Z',
+            },
           ];
 
         final provider = _buildProvider(fake);
         await provider.initialize();
 
+        final historyCalls = fake.calls
+            .where((c) => c.path.contains('/api/customers/history'))
+            .toList();
+        expect(historyCalls, hasLength(1));
+        expect(historyCalls.single.path, contains('partTypes=file'));
         expect(
-          fake.calls.where((c) => c.path.contains('/api/customers/history')),
-          hasLength(2),
+          provider.messages.any((m) => m.content == 'older page should not auto-load'),
+          isFalse,
         );
-        expect(provider.messages.length, 2);
-        expect(provider.messages.first.attachment?.kind,
-            FrontFaceAttachmentKind.location);
-        expect(provider.messages.first.attachment?.latitude, closeTo(24.7, 0.001));
-        expect(provider.messages.last.content, 'Newer page');
+        expect(
+          provider.messages.any(
+            (m) => m.attachment?.kind == FrontFaceAttachmentKind.location,
+          ),
+          isTrue,
+        );
+        final doc = provider.messages
+            .where((m) => m.attachment?.kind == FrontFaceAttachmentKind.file)
+            .single;
+        expect(doc.attachment?.fileName, 'Invoice.pdf');
+        expect(doc.attachment?.pageCount, 2);
       },
     );
 
     test(
-      'no lead yet → does not ensure-conversation (form first)',
+      'lead form still pending → ensure runs; form shows before history',
       () async {
         final fake = FakeApiManager(testConfig)
           ..embedConfigResponse = _leadCaptureEmailAfterConfig
@@ -1388,15 +1431,12 @@ void main() {
         final provider = _buildProvider(fake);
         await provider.initialize();
 
-        expect(provider.showLeadForm, isTrue);
         expect(
           fake.calls.any((c) => c.path.contains('/ensure-conversation')),
-          isFalse,
+          isTrue,
         );
-        expect(
-          fake.calls.any((c) => c.path.contains('/messages/public')),
-          isFalse,
-        );
+        expect(provider.showLeadForm, isTrue);
+        expect(provider.messages, isEmpty);
       },
     );
   });

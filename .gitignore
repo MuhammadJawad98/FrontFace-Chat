@@ -30,6 +30,11 @@ secrets/
 * copy.md
 * copy.mdc
 
+# Internal guides — do not publish to the public GitHub repo
+*_GUIDE.md
+HISTORY_*.md
+DOCUMENTS_GUIDE.md
+
 # IntelliJ related
 *.iml
 *.ipr

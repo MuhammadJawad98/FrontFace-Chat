@@ -1,0 +1,4 @@
+# Keep internal docs out of the pub.dev package (and local publish archives).
+*_GUIDE.md
+HISTORY_*.md
+DOCUMENTS_GUIDE.md

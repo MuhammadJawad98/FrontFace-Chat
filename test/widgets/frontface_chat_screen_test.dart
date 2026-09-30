@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontface_chat/frontface_chat.dart';
 import 'package:frontface_chat/src/services/frontface_api_service.dart';
+import 'package:frontface_chat/src/services/frontface_app_session_cache.dart';
 import 'package:frontface_chat/src/services/frontface_visitor_store.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,10 +14,16 @@ const _arabicStrings = FrontFaceChatStrings(
   typeMessage: 'اكتب رسالة...',
 );
 
-Future<FrontFaceChatProvider> _pumpScreen(
+/// Pumps the chat screen until initialize finishes, runs [body], then disposes.
+///
+/// Avoids [WidgetTester.pumpAndSettle] — LIVE_REPLIES starts presence / status
+/// / fallback timers that never go idle. Disposing cancels those timers before
+/// FakeAsync invariant checks.
+Future<void> _withScreen(
   WidgetTester tester,
   FakeApiManager fake, {
   FrontFaceChatStrings strings = const FrontFaceChatStrings(),
+  required Future<void> Function(FrontFaceChatProvider provider) body,
 }) async {
   final api = FrontFaceApiService(config: testConfig, apiManager: fake);
   final provider = FrontFaceChatProvider(
@@ -34,8 +41,13 @@ Future<FrontFaceChatProvider> _pumpScreen(
       ),
     ),
   );
-  await tester.pumpAndSettle();
-  return provider;
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 100));
+  try {
+    await body(provider);
+  } finally {
+    provider.dispose();
+  }
 }
 
 TextField _inputField(WidgetTester tester) =>
@@ -44,6 +56,7 @@ TextField _inputField(WidgetTester tester) =>
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    FrontFaceAppSessionCache.clear();
   });
 
   group('placeholder fallback', () {
@@ -51,18 +64,18 @@ void main() {
       tester,
     ) async {
       final fake = FakeApiManager(testConfig);
-      await _pumpScreen(tester, fake);
-
-      expect(_inputField(tester).decoration?.hintText, 'Type a message...');
+      await _withScreen(tester, fake, body: (_) async {
+        expect(_inputField(tester).decoration?.hintText, 'Type a message...');
+      });
     });
 
     testWidgets('Arabic string is shown when the server sends none', (
       tester,
     ) async {
       final fake = FakeApiManager(testConfig);
-      await _pumpScreen(tester, fake, strings: _arabicStrings);
-
-      expect(_inputField(tester).decoration?.hintText, 'اكتب رسالة...');
+      await _withScreen(tester, fake, strings: _arabicStrings, body: (_) async {
+        expect(_inputField(tester).decoration?.hintText, 'اكتب رسالة...');
+      });
     });
 
     testWidgets('server-provided placeholder overrides the local fallback', (
@@ -74,9 +87,9 @@ void main() {
         'config': {'greeting': 'Hi!', 'placeholder': 'كيف نساعدك؟'},
         'leadCapture': {'enabled': false},
       };
-      await _pumpScreen(tester, fake, strings: _arabicStrings);
-
-      expect(_inputField(tester).decoration?.hintText, 'كيف نساعدك؟');
+      await _withScreen(tester, fake, strings: _arabicStrings, body: (_) async {
+        expect(_inputField(tester).decoration?.hintText, 'كيف نساعدك؟');
+      });
     });
   });
 
@@ -90,9 +103,9 @@ void main() {
         'config': {'greeting': 'Hi!', 'title': 'Support'},
         'leadCapture': {'enabled': false},
       };
-      await _pumpScreen(tester, fake);
-
-      expect(find.text('Support'), findsOneWidget);
+      await _withScreen(tester, fake, body: (_) async {
+        expect(find.text('Support'), findsOneWidget);
+      });
     });
 
     testWidgets(
@@ -108,10 +121,10 @@ void main() {
           textDirection: TextDirection.rtl,
           title: 'الدعم',
         );
-        await _pumpScreen(tester, fake, strings: strings);
-
-        expect(find.text('الدعم'), findsOneWidget);
-        expect(find.text('Support'), findsNothing);
+        await _withScreen(tester, fake, strings: strings, body: (_) async {
+          expect(find.text('الدعم'), findsOneWidget);
+          expect(find.text('Support'), findsNothing);
+        });
       },
     );
   });
@@ -143,7 +156,11 @@ void main() {
 
         expect(find.text('Loading chat...'), findsOneWidget);
 
-        await tester.pumpAndSettle();
+        provider.dispose();
+        // Flush in-flight FakeApiManager delay timers.
+        await tester.pump(const Duration(milliseconds: 60));
+        await tester.pump(const Duration(milliseconds: 60));
+        await tester.pump(const Duration(milliseconds: 60));
       },
     );
 
@@ -176,7 +193,10 @@ void main() {
 
       expect(find.text('جارٍ تحميل المحادثة...'), findsOneWidget);
 
-      await tester.pumpAndSettle();
+      provider.dispose();
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump(const Duration(milliseconds: 60));
     });
   });
 
@@ -187,44 +207,44 @@ void main() {
         tester,
       ) async {
         final fake = FakeApiManager(testConfig);
-        await _pumpScreen(tester, fake, strings: _arabicStrings);
-
-        expect(_inputField(tester).textDirection, TextDirection.rtl);
+        await _withScreen(tester, fake, strings: _arabicStrings, body: (_) async {
+          expect(_inputField(tester).textDirection, TextDirection.rtl);
+        });
       });
 
       testWidgets('typing English switches the field to ltr', (tester) async {
         final fake = FakeApiManager(testConfig);
-        await _pumpScreen(tester, fake, strings: _arabicStrings);
+        await _withScreen(tester, fake, strings: _arabicStrings, body: (_) async {
+          await tester.enterText(find.byType(TextField), 'hello there');
+          await tester.pump();
 
-        await tester.enterText(find.byType(TextField), 'hello there');
-        await tester.pump();
-
-        expect(_inputField(tester).textDirection, TextDirection.ltr);
+          expect(_inputField(tester).textDirection, TextDirection.ltr);
+        });
       });
 
       testWidgets('typing Arabic keeps the field rtl', (tester) async {
         final fake = FakeApiManager(testConfig);
-        await _pumpScreen(tester, fake, strings: _arabicStrings);
+        await _withScreen(tester, fake, strings: _arabicStrings, body: (_) async {
+          await tester.enterText(find.byType(TextField), 'مرحبا كيف حالك');
+          await tester.pump();
 
-        await tester.enterText(find.byType(TextField), 'مرحبا كيف حالك');
-        await tester.pump();
-
-        expect(_inputField(tester).textDirection, TextDirection.rtl);
+          expect(_inputField(tester).textDirection, TextDirection.rtl);
+        });
       });
 
       testWidgets('clearing the field reverts to the chat language direction', (
         tester,
       ) async {
         final fake = FakeApiManager(testConfig);
-        await _pumpScreen(tester, fake, strings: _arabicStrings);
+        await _withScreen(tester, fake, strings: _arabicStrings, body: (_) async {
+          await tester.enterText(find.byType(TextField), 'hello');
+          await tester.pump();
+          expect(_inputField(tester).textDirection, TextDirection.ltr);
 
-        await tester.enterText(find.byType(TextField), 'hello');
-        await tester.pump();
-        expect(_inputField(tester).textDirection, TextDirection.ltr);
-
-        await tester.enterText(find.byType(TextField), '');
-        await tester.pump();
-        expect(_inputField(tester).textDirection, TextDirection.rtl);
+          await tester.enterText(find.byType(TextField), '');
+          await tester.pump();
+          expect(_inputField(tester).textDirection, TextDirection.rtl);
+        });
       });
     },
   );
@@ -241,10 +261,10 @@ void main() {
         },
         'leadCapture': {'enabled': false},
       };
-      await _pumpScreen(tester, fake);
-
-      expect(find.text('Hi! How can I help you today?'), findsOneWidget);
-      expect(find.textContaining('Hi there!'), findsNothing);
+      await _withScreen(tester, fake, body: (_) async {
+        expect(find.text('Hi! How can I help you today?'), findsOneWidget);
+        expect(find.textContaining('Hi there!'), findsNothing);
+      });
     });
 
     testWidgets('Arabic greeting appears exactly once', (tester) async {
@@ -258,10 +278,10 @@ void main() {
         },
         'leadCapture': {'enabled': false},
       };
-      await _pumpScreen(tester, fake, strings: _arabicStrings);
-
-      expect(find.text('مرحبا! كيف يمكنني مساعدتك اليوم؟'), findsOneWidget);
-      expect(find.textContaining('أهلاً بك!'), findsNothing);
+      await _withScreen(tester, fake, strings: _arabicStrings, body: (_) async {
+        expect(find.text('مرحبا! كيف يمكنني مساعدتك اليوم؟'), findsOneWidget);
+        expect(find.textContaining('أهلاً بك!'), findsNothing);
+      });
     });
   });
 
@@ -290,22 +310,28 @@ void main() {
             };
           });
 
-        await _pumpScreen(tester, fake);
-        await tester.pumpAndSettle(const Duration(milliseconds: 50));
+        await _withScreen(tester, fake, body: (_) async {
+          await tester.pump(const Duration(milliseconds: 50));
 
-        final listView = tester.widget<ListView>(find.byType(ListView));
-        expect(listView.reverse, isTrue);
-        final controller = listView.controller!;
-        expect(controller.hasClients, isTrue);
-        // reverse:true → offset 0 is the newest / visual bottom.
-        expect(
-          controller.position.pixels,
-          lessThan(80),
-          reason: 'should open pinned to the latest messages',
-        );
-        expect(find.text('Answer #59 from the assistant — a longer reply with '
-            'enough text to vary bubble height across the '
-            'history.'), findsOneWidget);
+          final listView = tester.widget<ListView>(find.byType(ListView));
+          expect(listView.reverse, isTrue);
+          final controller = listView.controller!;
+          expect(controller.hasClients, isTrue);
+          // reverse:true → offset 0 is the newest / visual bottom.
+          expect(
+            controller.position.pixels,
+            lessThan(80),
+            reason: 'should open pinned to the latest messages',
+          );
+          expect(
+            find.text(
+              'Answer #59 from the assistant — a longer reply with '
+              'enough text to vary bubble height across the '
+              'history.',
+            ),
+            findsOneWidget,
+          );
+        });
       },
     );
   });
@@ -315,16 +341,16 @@ void main() {
       'placeholder and input direction update without rebuilding the screen',
       (tester) async {
         final fake = FakeApiManager(testConfig);
-        final provider = await _pumpScreen(tester, fake);
+        await _withScreen(tester, fake, body: (provider) async {
+          expect(_inputField(tester).decoration?.hintText, 'Type a message...');
+          expect(_inputField(tester).textDirection, TextDirection.ltr);
 
-        expect(_inputField(tester).decoration?.hintText, 'Type a message...');
-        expect(_inputField(tester).textDirection, TextDirection.ltr);
+          provider.updateStrings(_arabicStrings);
+          await tester.pump();
 
-        provider.updateStrings(_arabicStrings);
-        await tester.pump();
-
-        expect(_inputField(tester).decoration?.hintText, 'اكتب رسالة...');
-        expect(_inputField(tester).textDirection, TextDirection.rtl);
+          expect(_inputField(tester).decoration?.hintText, 'اكتب رسالة...');
+          expect(_inputField(tester).textDirection, TextDirection.rtl);
+        });
       },
     );
 
@@ -335,15 +361,15 @@ void main() {
         'config': {'greeting': 'Hi!', 'title': 'Support'},
         'leadCapture': {'enabled': false},
       };
-      final provider = await _pumpScreen(tester, fake);
+      await _withScreen(tester, fake, body: (provider) async {
+        expect(find.text('Support'), findsOneWidget);
 
-      expect(find.text('Support'), findsOneWidget);
+        provider.updateStrings(const FrontFaceChatStrings(title: 'الدعم'));
+        await tester.pump();
 
-      provider.updateStrings(const FrontFaceChatStrings(title: 'الدعم'));
-      await tester.pump();
-
-      expect(find.text('الدعم'), findsOneWidget);
-      expect(find.text('Support'), findsNothing);
+        expect(find.text('الدعم'), findsOneWidget);
+        expect(find.text('Support'), findsNothing);
+      });
     });
   });
 }

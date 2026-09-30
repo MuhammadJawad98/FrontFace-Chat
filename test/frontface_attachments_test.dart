@@ -144,6 +144,46 @@ void main() {
       expect(stringCoords.attachment?.latitude, 25.1);
       expect(stringCoords.attachment?.longitude, 55.2);
 
+      final fileMsg = FrontFaceChatMessage.fromJson({
+        'id': 'm_file',
+        'content': ' ',
+        'senderType': 'agent',
+        'createdAt': '2026-09-24T18:20:00Z',
+        'parts': [
+          {
+            'type': 'file',
+            'url': 'https://cdn.example.com/signed.pdf?token=abc',
+            'processingStatus': 'ready',
+            'payload': {
+              'filename': 'Invoice - INV_2026_375527.pdf',
+              'mime_type': 'application/pdf',
+              'byte_size': 65801,
+              'page_count': 1,
+            },
+            'derivedText': 'PDF document summary for the AI — hide from UI',
+          },
+        ],
+      });
+      expect(fileMsg.attachment?.kind, FrontFaceAttachmentKind.file);
+      expect(fileMsg.attachment?.fileName, 'Invoice - INV_2026_375527.pdf');
+      expect(fileMsg.attachment?.byteSize, 65801);
+      expect(fileMsg.attachment?.pageCount, 1);
+      expect(fileMsg.attachment?.url, contains('signed.pdf'));
+      expect(fileMsg.attachment?.derivedText, isNull);
+
+      final unknownPart = FrontFaceChatMessage.fromJson({
+        'id': 'm_unk',
+        'content': 'hello',
+        'senderType': 'agent',
+        'createdAt': '2026-09-24T18:20:00Z',
+        'parts': [
+          {'type': 'future_widget', 'payload': {}},
+        ],
+      });
+      expect(unknownPart.parts.single.type, FrontFaceMessagePartType.unknown);
+      expect(unknownPart.attachment, isNull);
+      expect(unknownPart.content, 'hello');
+
       final imageMsg = FrontFaceChatMessage.fromJson({
         'id': 'm2',
         'content': '',

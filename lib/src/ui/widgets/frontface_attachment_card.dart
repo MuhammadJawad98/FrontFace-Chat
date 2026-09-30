@@ -2,6 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/frontface_attachments_config.dart';
@@ -10,13 +13,15 @@ import '../../config/frontface_chat_theme.dart';
 import 'frontface_image_viewer.dart';
 import 'frontface_voice_player.dart';
 
-/// Renders a location / media attachment card inside a chat bubble.
+/// Renders a location / media / document attachment card inside a chat bubble.
 class FrontFaceAttachmentCard extends StatelessWidget {
   final FrontFaceAttachmentPayload attachment;
   final FrontFaceChatTheme theme;
   final FrontFaceChatStrings strings;
   final bool isVisitor;
   final String? googleMapsApiKey;
+  final String? messageId;
+  final Future<String?> Function(String messageId)? refreshDocumentUrl;
 
   const FrontFaceAttachmentCard({
     super.key,
@@ -25,6 +30,8 @@ class FrontFaceAttachmentCard extends StatelessWidget {
     required this.strings,
     this.isVisitor = false,
     this.googleMapsApiKey,
+    this.messageId,
+    this.refreshDocumentUrl,
   });
 
   Color get _fg => isVisitor
@@ -77,6 +84,15 @@ class FrontFaceAttachmentCard extends StatelessWidget {
           fg: _fg,
           muted: _muted,
           strings: strings,
+        );
+      case FrontFaceAttachmentKind.file:
+        body = _DocumentCard(
+          attachment: attachment,
+          strings: strings,
+          fg: _fg,
+          muted: _muted,
+          messageId: messageId,
+          refreshDocumentUrl: refreshDocumentUrl,
         );
     }
     return _withUploadChrome(child: body);
@@ -418,6 +434,186 @@ class _AudioCard extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _DocumentCard extends StatefulWidget {
+  final FrontFaceAttachmentPayload attachment;
+  final FrontFaceChatStrings strings;
+  final Color fg;
+  final Color muted;
+  final String? messageId;
+  final Future<String?> Function(String messageId)? refreshDocumentUrl;
+
+  const _DocumentCard({
+    required this.attachment,
+    required this.strings,
+    required this.fg,
+    required this.muted,
+    this.messageId,
+    this.refreshDocumentUrl,
+  });
+
+  @override
+  State<_DocumentCard> createState() => _DocumentCardState();
+}
+
+class _DocumentCardState extends State<_DocumentCard> {
+  bool _opening = false;
+
+  String get _fileName {
+    final name = widget.attachment.fileName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final label = widget.attachment.label?.trim();
+    if (label != null && label.isNotEmpty) return label;
+    return widget.strings.documentAttachment;
+  }
+
+  String get _metaLine {
+    final parts = <String>['PDF'];
+    final bytes = widget.attachment.byteSize;
+    if (bytes != null && bytes > 0) {
+      if (bytes < 1024) {
+        parts.add('$bytes B');
+      } else if (bytes < 1024 * 1024) {
+        parts.add('${(bytes / 1024).round()} KB');
+      } else {
+        parts.add('${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB');
+      }
+    }
+    final pages = widget.attachment.pageCount;
+    if (pages != null && pages > 0) {
+      parts.add(pages == 1 ? '1 page' : '$pages pages');
+    }
+    return parts.join(' · ');
+  }
+
+  Future<void> _open() async {
+    if (_opening) return;
+    setState(() => _opening = true);
+    try {
+      var url = widget.attachment.url?.trim();
+      if (url == null || url.isEmpty) {
+        _toast(widget.strings.attachmentUnavailable);
+        return;
+      }
+
+      var ok = await _downloadAndOpen(url);
+      if (!ok &&
+          widget.messageId != null &&
+          widget.refreshDocumentUrl != null) {
+        final fresh = await widget.refreshDocumentUrl!(widget.messageId!);
+        if (fresh != null && fresh.isNotEmpty) {
+          ok = await _downloadAndOpen(fresh);
+        }
+      }
+      if (!ok && mounted) {
+        _toast(widget.strings.documentOpenFailed);
+      }
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  Future<bool> _downloadAndOpen(String url) async {
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 400 || response.statusCode == 403) {
+        return false;
+      }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return false;
+      }
+      final dir = await getTemporaryDirectory();
+      final safeName = _fileName.replaceAll(RegExp(r'[\\/]+'), '_');
+      final file = File('${dir.path}/ff_$safeName');
+      await file.writeAsBytes(response.bodyBytes, flush: true);
+      final result = await OpenFilex.open(file.path);
+      return result.type == ResultType.done;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: widget.fg.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: _opening ? null : _open,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: widget.fg.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: _opening
+                    ? Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: CupertinoActivityIndicator(
+                          color: widget.fg,
+                          radius: 8,
+                        ),
+                      )
+                    : Icon(
+                        Icons.picture_as_pdf_rounded,
+                        color: widget.fg,
+                        size: 20,
+                      ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _fileName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: widget.fg,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _metaLine,
+                      style: TextStyle(
+                        color: widget.muted,
+                        fontSize: 11.5,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.open_in_new_rounded,
+                size: 16,
+                color: widget.muted,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

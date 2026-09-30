@@ -125,9 +125,8 @@ class FrontFaceChat {
 
   /// Links a logged-in user to the chat visitor via a JWT from your backend.
   ///
-  /// Share [IDENTITY_VERIFICATION_GUIDE.md] with your backend team so they
-  /// can mint the token after login. Call on each app launch when the user
-  /// is authenticated. Never blocks chat if identify fails.
+  /// Your backend should mint the token after login. Call on each app launch
+  /// when the user is authenticated. Never blocks chat if identify fails.
   static Future<FrontFaceIdentifyResult> identify({
     required FrontFaceChatProvider provider,
     required String identityToken,
@@ -138,8 +137,8 @@ class FrontFaceChat {
   /// Sets an account-keyed [visitorId] so chat history follows the user
   /// across reinstalls / devices. Call after login, before opening chat.
   ///
-  /// Your backend should mint one stable, unguessable id per user (see
-  /// `CHAT_HISTORY_GUIDE.md`). On logout call [resetUser].
+  /// Your backend should mint one stable, unguessable id per user.
+  /// On logout call [resetUser].
   static Future<void> setVisitorId({
     required FrontFaceChatProvider provider,
     required String visitorId,

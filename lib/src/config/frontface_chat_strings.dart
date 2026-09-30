@@ -81,6 +81,9 @@ class FrontFaceChatStrings {
   final String imageAttachment;
   final String audioAttachment;
   final String videoAttachment;
+  final String documentAttachment;
+  final String openDocument;
+  final String documentOpenFailed;
   final String transcriptPending;
   final String transcriptFailed;
   final String attachmentTooLarge;
@@ -182,6 +185,9 @@ class FrontFaceChatStrings {
     this.imageAttachment = 'Image',
     this.audioAttachment = 'Voice message',
     this.videoAttachment = 'Video',
+    this.documentAttachment = 'Document',
+    this.openDocument = 'Open PDF',
+    this.documentOpenFailed = 'Could not open document. Please try again.',
     this.transcriptPending = 'Transcribing…',
     this.transcriptFailed = 'Transcript unavailable',
     this.attachmentTooLarge = 'That file is too large to send.',
@@ -281,6 +287,9 @@ class FrontFaceChatStrings {
     imageAttachment: 'صورة',
     audioAttachment: 'رسالة صوتية',
     videoAttachment: 'فيديو',
+    documentAttachment: 'مستند',
+    openDocument: 'فتح PDF',
+    documentOpenFailed: 'تعذر فتح المستند. حاول مرة أخرى.',
     transcriptPending: 'جارٍ التفريغ…',
     transcriptFailed: 'التفريغ غير متاح',
     attachmentTooLarge: 'هذا الملف كبير جداً للإرسال.',
@@ -412,6 +421,9 @@ class FrontFaceChatStrings {
     String? imageAttachment,
     String? audioAttachment,
     String? videoAttachment,
+    String? documentAttachment,
+    String? openDocument,
+    String? documentOpenFailed,
     String? transcriptPending,
     String? transcriptFailed,
     String? attachmentTooLarge,
@@ -500,6 +512,9 @@ class FrontFaceChatStrings {
       imageAttachment: imageAttachment ?? this.imageAttachment,
       audioAttachment: audioAttachment ?? this.audioAttachment,
       videoAttachment: videoAttachment ?? this.videoAttachment,
+      documentAttachment: documentAttachment ?? this.documentAttachment,
+      openDocument: openDocument ?? this.openDocument,
+      documentOpenFailed: documentOpenFailed ?? this.documentOpenFailed,
       transcriptPending: transcriptPending ?? this.transcriptPending,
       transcriptFailed: transcriptFailed ?? this.transcriptFailed,
       attachmentTooLarge: attachmentTooLarge ?? this.attachmentTooLarge,

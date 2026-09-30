@@ -60,6 +60,7 @@ class FrontFaceMessageBubble extends StatelessWidget {
   final FrontFaceChatTheme theme;
   final FrontFaceChatStrings strings;
   final String? googleMapsApiKey;
+  final Future<String?> Function(String messageId)? refreshDocumentUrl;
 
   const FrontFaceMessageBubble({
     super.key,
@@ -67,6 +68,7 @@ class FrontFaceMessageBubble extends StatelessWidget {
     required this.theme,
     this.strings = const FrontFaceChatStrings(),
     this.googleMapsApiKey,
+    this.refreshDocumentUrl,
   });
 
   Future<void> _copyMessage(BuildContext context) async {
@@ -162,6 +164,8 @@ class FrontFaceMessageBubble extends StatelessWidget {
                   strings: strings,
                   isVisitor: isVisitor,
                   googleMapsApiKey: googleMapsApiKey,
+                  messageId: message.id,
+                  refreshDocumentUrl: refreshDocumentUrl,
                 )
               else if (isVisitor && message.content.trim().isNotEmpty)
                 Text(

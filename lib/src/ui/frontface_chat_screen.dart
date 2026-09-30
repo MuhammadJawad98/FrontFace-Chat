@@ -365,6 +365,7 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                               strings: _strings,
                               googleMapsApiKey: provider
                                   .attachmentsConfig.googleMapsApiKey,
+                              refreshDocumentUrl: provider.refreshDocumentUrl,
                             );
                           },
                         ),

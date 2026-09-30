@@ -193,7 +193,7 @@ class FrontFaceChatMessage {
   }
 }
 
-enum FrontFaceMessagePartType { location, image, audio }
+enum FrontFaceMessagePartType { location, image, audio, file, unknown }
 
 /// Non-text part from `GET …/messages/public` (`MessagePart` in openapi).
 class FrontFaceMessagePart {
@@ -285,6 +285,23 @@ class FrontFaceMessagePart {
   String? get label => payload['label']?.toString() ?? derivedText;
   int? get durationMs => payload['duration_ms'] as int?;
   String? get localPath => payload['local_path']?.toString();
+  String? get fileName => payload['filename']?.toString();
+  String? get mimeType => payload['mime_type']?.toString();
+  int? get byteSize {
+    final v = payload['byte_size'];
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v.trim());
+    return null;
+  }
+
+  int? get pageCount {
+    final v = payload['page_count'];
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v.trim());
+    return null;
+  }
 
   static double? _coord(Object? value) {
     if (value is num) return value.toDouble();
@@ -319,6 +336,20 @@ class FrontFaceMessagePart {
           derivedText: derivedText,
           processingStatus: processingStatus,
         );
+      case FrontFaceMessagePartType.file:
+        return FrontFaceAttachmentPayload(
+          kind: FrontFaceAttachmentKind.file,
+          url: url,
+          // Do not surface derivedText (AI summary) to the customer.
+          label: fileName,
+          fileName: fileName,
+          mimeType: mimeType ?? 'application/pdf',
+          byteSize: byteSize,
+          pageCount: pageCount,
+          processingStatus: processingStatus,
+        );
+      case FrontFaceMessagePartType.unknown:
+        return null;
     }
   }
 
@@ -328,8 +359,13 @@ class FrontFaceMessagePart {
         return FrontFaceMessagePartType.image;
       case 'audio':
         return FrontFaceMessagePartType.audio;
-      default:
+      case 'location':
         return FrontFaceMessagePartType.location;
+      case 'file':
+        return FrontFaceMessagePartType.file;
+      default:
+        // Skip unknown part types — never fail the whole message list.
+        return FrontFaceMessagePartType.unknown;
     }
   }
 
