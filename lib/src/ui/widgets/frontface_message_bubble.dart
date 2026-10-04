@@ -96,6 +96,7 @@ class FrontFaceMessageBubble extends StatelessWidget {
     final isSystem = message.senderType == FrontFaceSenderType.system;
 
     if (isSystem) {
+      final isCall = message.isCallMessage;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(
@@ -105,11 +106,26 @@ class FrontFaceMessageBubble extends StatelessWidget {
               color: theme.backgroundColor,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Text(
-              message.content,
-              textDirection: detectTextDirection(message.content),
-              style: TextStyle(fontSize: 12, color: theme.subtitleColor),
-              textAlign: TextAlign.center,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isCall) ...[
+                  Icon(
+                    Icons.call,
+                    size: 14,
+                    color: theme.subtitleColor,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Flexible(
+                  child: Text(
+                    message.content,
+                    textDirection: detectTextDirection(message.content),
+                    style: TextStyle(fontSize: 12, color: theme.subtitleColor),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -157,80 +173,87 @@ class FrontFaceMessageBubble extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
               ],
-              if (message.attachment != null)
+              // Caption text (skip whitespace-only — DOCUMENTS_GUIDE §2).
+              if (message.hasDisplayableText) ...[
+                if (isVisitor)
+                  Text(
+                    message.content,
+                    textDirection: detectTextDirection(message.content),
+                    style: theme.textStyle(
+                      _fontDirection(message.content),
+                      fontSize: 15,
+                      height: 1.35,
+                      color: theme.userBubbleTextColor,
+                    ),
+                  )
+                else
+                  Directionality(
+                    textDirection: detectTextDirection(message.content),
+                    child: MarkdownBody(
+                      data: normalizeMarkdownDetailLinkLabels(
+                        message.content,
+                        viewDetailsLabel: strings.viewDetails,
+                      ),
+                      selectable: false,
+                      softLineBreak: true,
+                      onTapLink: openFrontFaceMarkdownLink,
+                      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                          .copyWith(
+                        p: theme.textStyle(
+                          _fontDirection(message.content),
+                          fontSize: 15,
+                          height: 1.35,
+                          color: theme.assistantBubbleTextColor,
+                        ),
+                        strong: theme.textStyle(
+                          _fontDirection(message.content),
+                          fontSize: 15,
+                          height: 1.35,
+                          fontWeight: FontWeight.w700,
+                          color: theme.assistantBubbleTextColor,
+                        ),
+                        em: theme
+                            .textStyle(
+                              _fontDirection(message.content),
+                              fontSize: 15,
+                              height: 1.35,
+                              color: theme.assistantBubbleTextColor,
+                            )
+                            .copyWith(fontStyle: FontStyle.italic),
+                        listBullet: theme.textStyle(
+                          _fontDirection(message.content),
+                          fontSize: 15,
+                          color: theme.assistantBubbleTextColor,
+                        ),
+                        a: theme.textStyle(
+                          _fontDirection(message.content),
+                          color: theme.linkColor,
+                          decoration: TextDecoration.underline,
+                          decorationColor: theme.linkColor,
+                        ),
+                        code: theme.textStyle(
+                          _fontDirection(message.content),
+                          fontSize: 13.5,
+                          color: theme.assistantBubbleTextColor,
+                        ).copyWith(backgroundColor: theme.backgroundColor),
+                      ),
+                    ),
+                  ),
+                if (message.attachments.isNotEmpty) const SizedBox(height: 8),
+              ],
+              // PDF / media / location cards (all known parts).
+              for (var i = 0; i < message.attachments.length; i++) ...[
+                if (i > 0) const SizedBox(height: 8),
                 FrontFaceAttachmentCard(
-                  attachment: message.attachment!,
+                  attachment: message.attachments[i],
                   theme: theme,
                   strings: strings,
                   isVisitor: isVisitor,
                   googleMapsApiKey: googleMapsApiKey,
                   messageId: message.id,
                   refreshDocumentUrl: refreshDocumentUrl,
-                )
-              else if (isVisitor && message.content.trim().isNotEmpty)
-                Text(
-                  message.content,
-                  textDirection: detectTextDirection(message.content),
-                  style: theme.textStyle(
-                    _fontDirection(message.content),
-                    fontSize: 15,
-                    height: 1.35,
-                    color: theme.userBubbleTextColor,
-                  ),
-                )
-              else if (!isVisitor && message.content.trim().isNotEmpty)
-                Directionality(
-                  textDirection: detectTextDirection(message.content),
-                  child: MarkdownBody(
-                    data: normalizeMarkdownDetailLinkLabels(
-                      message.content,
-                      viewDetailsLabel: strings.viewDetails,
-                    ),
-                    selectable: false,
-                    softLineBreak: true,
-                    onTapLink: openFrontFaceMarkdownLink,
-                    styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
-                        .copyWith(
-                      p: theme.textStyle(
-                        _fontDirection(message.content),
-                        fontSize: 15,
-                        height: 1.35,
-                        color: theme.assistantBubbleTextColor,
-                      ),
-                      strong: theme.textStyle(
-                        _fontDirection(message.content),
-                        fontSize: 15,
-                        height: 1.35,
-                        fontWeight: FontWeight.w700,
-                        color: theme.assistantBubbleTextColor,
-                      ),
-                      em: theme
-                          .textStyle(
-                            _fontDirection(message.content),
-                            fontSize: 15,
-                            height: 1.35,
-                            color: theme.assistantBubbleTextColor,
-                          )
-                          .copyWith(fontStyle: FontStyle.italic),
-                      listBullet: theme.textStyle(
-                        _fontDirection(message.content),
-                        fontSize: 15,
-                        color: theme.assistantBubbleTextColor,
-                      ),
-                      a: theme.textStyle(
-                        _fontDirection(message.content),
-                        color: theme.linkColor,
-                        decoration: TextDecoration.underline,
-                        decorationColor: theme.linkColor,
-                      ),
-                      code: theme.textStyle(
-                        _fontDirection(message.content),
-                        fontSize: 13.5,
-                        color: theme.assistantBubbleTextColor,
-                      ).copyWith(backgroundColor: theme.backgroundColor),
-                    ),
-                  ),
                 ),
+              ],
               if (message.hasTicketCard) ...[
                 const SizedBox(height: 10),
                 FrontFaceTicketCard(

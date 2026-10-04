@@ -1,3 +1,10 @@
+## 1.6.0
+
+* Audio calls: Call button (when `GET …/calls/availability` says so), LiveKit media via folded `frontface_calls` client, call screen (ringing / connected / reconnecting / ended), mute / speaker / hang up.
+* Android: `flutter_background` microphone foreground service helper (`frontFaceKeepCallAliveInBackground`).
+* Chat transcript: system call lines (`messageKind: call`) render with a phone icon.
+* Config: `enableCalls`, `callSpeakerOnAtStart`, `callNoiseCancellation` on `FrontFaceChatConfig`.
+
 ## 1.5.14
 
 * Documents: receive agent PDF parts (`type: file`) — request `partTypes=file` on history / `messages/public`, show a document card (filename · size · pages), download+open on tap via `open_filex`, refresh signed URL on expiry.

@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
+import '../calls/call_background.dart';
+import '../calls/calls.dart';
 import '../config/frontface_chat_strings.dart';
 import '../config/frontface_chat_theme.dart';
 import '../models/frontface_models.dart';
 import '../provider/frontface_chat_provider.dart';
 import '../utils/text_direction.dart';
 import 'widgets/frontface_attachment_sheet.dart';
+import 'widgets/frontface_call_screen.dart';
 import 'widgets/frontface_channel_buttons.dart';
 import 'widgets/frontface_csat_prompt.dart';
 import 'widgets/frontface_lead_form.dart';
@@ -78,6 +83,62 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
 
   Future<void> _initializeChat() async {
     await _provider.initialize();
+  }
+
+  Future<void> _startCall(
+    BuildContext context,
+    FrontFaceChatProvider provider,
+  ) async {
+    // 1. Microphone first — never create a call if permission is refused.
+    final mic = await Permission.microphone.request();
+    if (!mic.isGranted) {
+      if (!context.mounted) return;
+      final msg = mic.isPermanentlyDenied
+          ? _strings.callMicPermanentlyDenied
+          : _strings.callMicRequired;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      if (mic.isPermanentlyDenied) await openAppSettings();
+      return;
+    }
+
+    // 2. Android foreground service while still on screen.
+    await frontFaceKeepCallAliveInBackground(true);
+
+    try {
+      String? appVersion;
+      try {
+        final info = await PackageInfo.fromPlatform();
+        appVersion = info.version;
+      } catch (_) {}
+
+      final session = await provider.startAudioCall(appVersion: appVersion);
+      if (!context.mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => FrontFaceCallScreen(
+            session: session,
+            strings: _strings,
+            theme: widget.theme,
+          ),
+        ),
+      );
+      await frontFaceKeepCallAliveInBackground(false);
+      await provider.onAudioCallFinished();
+    } on CallsException catch (e) {
+      await frontFaceKeepCallAliveInBackground(false);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(frontFaceCallRefusalMessage(e, _strings))),
+      );
+      await provider.refreshCallAvailability();
+    } catch (_) {
+      await frontFaceKeepCallAliveInBackground(false);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_strings.callStartFailed)),
+      );
+      await provider.refreshCallAvailability();
+    }
   }
 
   @override
@@ -235,6 +296,29 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
             },
           ),
           actions: [
+            Consumer<FrontFaceChatProvider>(
+              builder: (context, provider, _) {
+                if (!provider.showCallButton) {
+                  return const SizedBox.shrink();
+                }
+                return IconButton(
+                  tooltip: _strings.callSupport,
+                  onPressed: provider.isStartingCall || provider.isInitializing
+                      ? null
+                      : () => _startCall(context, provider),
+                  icon: provider.isStartingCall
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: widget.theme.onPrimaryColor,
+                          ),
+                        )
+                      : const Icon(Icons.call),
+                );
+              },
+            ),
             Consumer<FrontFaceChatProvider>(
               builder: (context, provider, _) {
                 if (!provider.showNewChatButton) {

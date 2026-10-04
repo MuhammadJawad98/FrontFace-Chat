@@ -45,6 +45,17 @@ class FrontFaceMessageMetadata {
 
   bool get isAutoClosed => event == 'auto_closed';
 
+  /// System transcript line for an audio call (CALLS_GUIDE §8).
+  bool get isCallMessage =>
+      raw['messageKind']?.toString() == 'call' ||
+      raw['message_kind']?.toString() == 'call';
+
+  String? get callOutcome => raw['outcome']?.toString();
+
+  int? get callDurationSeconds =>
+      (raw['duration_seconds'] as num?)?.toInt() ??
+      (raw['durationSeconds'] as num?)?.toInt();
+
   Map<String, dynamic>? get ticketCard {
     final card = raw['ticket'];
     if (card is Map) return Map<String, dynamic>.from(card);
@@ -84,47 +95,60 @@ class FrontFaceChatMessage {
 
   bool get isCsatPrompt => metadata.isCsatPrompt;
 
+  bool get isCallMessage => metadata.isCallMessage;
+
   bool get hasParts => parts.isNotEmpty;
 
   /// Prefer server [parts]; fall back to legacy text/metadata parse.
+  ///
+  /// Returns the first renderable attachment (image / audio / location / file).
   FrontFaceAttachmentPayload? get attachment {
-    FrontFaceAttachmentPayload? mapped;
+    final all = attachments;
+    return all.isEmpty ? null : all.first;
+  }
+
+  /// All renderable attachments from [parts]. Unknown part types are skipped
+  /// (DOCUMENTS_GUIDE §6) so one unknown part never fails the message.
+  List<FrontFaceAttachmentPayload> get attachments {
+    final out = <FrontFaceAttachmentPayload>[];
     for (final part in parts) {
-      mapped = part.toAttachmentPayload();
-      if (mapped != null) break;
+      final mapped = part.toAttachmentPayload();
+      if (mapped != null) out.add(mapped);
     }
-    mapped ??= FrontFaceAttachmentPayload.tryParse(
-      content: content,
-      metadata: metadata.raw,
-    );
-    if (mapped == null) return null;
+    if (out.isEmpty) {
+      final legacy = FrontFaceAttachmentPayload.tryParse(
+        content: content,
+        metadata: metadata.raw,
+      );
+      if (legacy != null) out.add(legacy);
+    }
 
     // Merge client upload status from metadata (optimistic bubbles).
     final raw = metadata.raw['attachment'];
-    if (raw is Map && mapped.uploadStatus == null) {
-      final status = raw['upload_status']?.toString();
-      if (status == 'uploading') {
-        return mapped.copyWith(
-          uploadStatus: FrontFaceAttachmentUploadStatus.uploading,
-        );
-      }
-      if (status == 'failed') {
-        return mapped.copyWith(
-          uploadStatus: FrontFaceAttachmentUploadStatus.failed,
-        );
-      }
-      if (status == 'sent') {
-        return mapped.copyWith(
-          uploadStatus: FrontFaceAttachmentUploadStatus.sent,
-        );
-      }
+    if (raw is! Map || out.isEmpty) return out;
+    final status = raw['upload_status']?.toString();
+    FrontFaceAttachmentUploadStatus? uploadStatus;
+    if (status == 'uploading') {
+      uploadStatus = FrontFaceAttachmentUploadStatus.uploading;
+    } else if (status == 'failed') {
+      uploadStatus = FrontFaceAttachmentUploadStatus.failed;
+    } else if (status == 'sent') {
+      uploadStatus = FrontFaceAttachmentUploadStatus.sent;
     }
-    return mapped;
+    if (uploadStatus == null || out.first.uploadStatus != null) return out;
+
+    return [
+      out.first.copyWith(uploadStatus: uploadStatus),
+      ...out.skip(1),
+    ];
   }
 
   /// True while a local attachment is still uploading to FrontFace.
   bool get isAttachmentUploading =>
       attachment?.uploadStatus == FrontFaceAttachmentUploadStatus.uploading;
+
+  /// Document-only messages often send whitespace `content` — treat as no text.
+  bool get hasDisplayableText => content.trim().isNotEmpty;
 
   factory FrontFaceChatMessage.fromJson(Map<String, dynamic> json) {
     final content = json['content']?.toString() ?? '';

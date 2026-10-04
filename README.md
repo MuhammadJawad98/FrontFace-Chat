@@ -11,6 +11,7 @@ Native Flutter SDK for [FrontFace](https://frontface.app) AI chat with optional 
 - Channel launcher buttons (WhatsApp, email, phone, etc.) from dashboard config
 - Customer identity verification via backend-signed JWT (`identify` / `resetUser`)
 - Optional attachments: location (Google Maps), images, voice notes (config-gated; uploaded via FrontFace signed URLs)
+- **Audio calls** to support agents (availability-gated Call button, LiveKit media, call screen, call lines in chat)
 - Session restore across app restarts (session id + session token persisted automatically)
 - Customizable theme and localized strings
 - One-line `FrontFaceChat.open()` integration
@@ -27,7 +28,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  frontface_chat: ^1.5.14
+  frontface_chat: ^1.6.0
 ```
 
 That is enough for FrontFace. The package pins `audioplayers` / `record` / `image_picker_android` (and their platform plugins), `file_picker` 11.x, `geolocator` `<14.0.3`, and `package_info_plus` `<10` so you should **not** need `dependency_overrides` for those.
@@ -224,6 +225,40 @@ end
 ```
 
 Then run `cd ios && pod install`.
+
+### Audio calls
+
+Verified customers can call support when the server reports availability. The SDK
+shows a Call button in the chat app bar, joins LiveKit audio, and appends a call
+line to the transcript when the call ends.
+
+**Host setup (required):**
+
+- **iOS** `Info.plist`: keep `NSMicrophoneUsageDescription`, and add background audio:
+
+```xml
+<key>UIBackgroundModes</key>
+<array>
+  <string>audio</string>
+</array>
+```
+
+- **Android** `AndroidManifest.xml`: `RECORD_AUDIO`, `FOREGROUND_SERVICE`,
+  `FOREGROUND_SERVICE_MICROPHONE`, `POST_NOTIFICATIONS`, plus the
+  `flutter_background` microphone service (see CALLS_GUIDE). If
+  `livekit_noise_filter` fails to compile against API 36, raise the plugin
+  `compileSdk` in the host `android/build.gradle.kts` as documented in the guide.
+
+```dart
+FrontFaceChatConfig(
+  projectId: projectId,
+  publishableKey: pk,
+  enableCalls: true, // default
+);
+```
+
+Customers must be identified (`FrontFaceChat.identify`) or the button stays hidden
+(`not_verified`). Set `enableCalls: false` to hide calling entirely.
 
 Permissions use the **native** system dialog. An in-app popup appears only if access
 is permanently denied (to open Settings) or location services are off.

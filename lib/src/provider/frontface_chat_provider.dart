@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../calls/calls.dart';
 import '../config/frontface_chat_config.dart';
 import '../config/frontface_chat_strings.dart';
 import '../models/frontface_models.dart';
@@ -76,6 +77,9 @@ class FrontFaceChatProvider extends ChangeNotifier
   bool _showOfflineForm = false;
   bool _csatSubmitted = false;
   FrontFaceIdentifyResult? _identifyResult;
+  CallAvailability? _callAvailability;
+  FrontFaceCalls? _callsClient;
+  bool _isStartingCall = false;
 
   FrontFaceChatStrings get strings => _strings;
 
@@ -140,6 +144,21 @@ class FrontFaceChatProvider extends ChangeNotifier
       _handoffAvailability.showLiveHandoffButton &&
       _status == FrontFaceConversationStatus.aiActive &&
       !_showOfflineForm;
+
+  /// Call button — only when [FrontFaceChatConfig.enableCalls] and the server
+  /// says calls are available for this verified visitor.
+  bool get showCallButton =>
+      _chatConfig.enableCalls &&
+      !_showLeadForm &&
+      !_isInitializing &&
+      _sessionId != null &&
+      _sessionToken != null &&
+      _visitorId != null &&
+      (_callAvailability?.available ?? false);
+
+  bool get isStartingCall => _isStartingCall;
+
+  CallAvailability? get callAvailability => _callAvailability;
 
   bool get showOfflineForm => _showOfflineForm;
 
@@ -329,9 +348,89 @@ class FrontFaceChatProvider extends ChangeNotifier
       } else {
         _stopFallbackPolling();
       }
+      unawaited(refreshCallAvailability());
     } catch (_) {
       if (!_disposed && _liveModeDesired) _startFallbackPolling();
     }
+  }
+
+  FrontFaceCalls _calls() {
+    final visitor = _visitorId;
+    if (visitor == null || visitor.isEmpty) {
+      throw StateError('visitorId required before calling');
+    }
+    return _callsClient ??= FrontFaceCalls(
+      baseUrl: _chatConfig.baseUrl,
+      clientKey: _chatConfig.publishableKey,
+      visitorId: visitor,
+      noiseCancellation: _chatConfig.callNoiseCancellation,
+      speakerOnAtStart: _chatConfig.callSpeakerOnAtStart,
+    );
+  }
+
+  /// Re-check whether to show the Call button (chat open / app resume).
+  Future<void> refreshCallAvailability() async {
+    if (_disposed || !_chatConfig.enableCalls) return;
+    if (_visitorId == null || _sessionId == null || _sessionToken == null) {
+      _callAvailability = null;
+      _notify();
+      return;
+    }
+    try {
+      final result = await _calls().availability(
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken!,
+      );
+      if (_disposed) return;
+      _callAvailability = result;
+      _notify();
+    } catch (_) {
+      if (_disposed) return;
+      _callAvailability = null;
+      _notify();
+    }
+  }
+
+  /// Starts (or rejoins) an audio call. Ask for microphone permission first.
+  ///
+  /// Throws [CallsException] when the server refuses. On Android, start the
+  /// microphone foreground service before calling this (see CALLS_GUIDE §5).
+  Future<CallSession> startAudioCall({String? appVersion}) async {
+    if (_visitorId == null || _sessionId == null || _sessionToken == null) {
+      throw const CallsException(
+        status: 0,
+        code: CallsErrorCode.sessionInvalid,
+        message: 'No active conversation',
+      );
+    }
+    _isStartingCall = true;
+    _notify();
+    try {
+      final client = FrontFaceCalls(
+        baseUrl: _chatConfig.baseUrl,
+        clientKey: _chatConfig.publishableKey,
+        visitorId: _visitorId!,
+        appVersion: appVersion,
+        noiseCancellation: _chatConfig.callNoiseCancellation,
+        speakerOnAtStart: _chatConfig.callSpeakerOnAtStart,
+      );
+      _callsClient = client;
+      return await client.startCall(
+        conversationId: _sessionId!,
+        sessionToken: _sessionToken!,
+      );
+    } finally {
+      _isStartingCall = false;
+      _notify();
+    }
+  }
+
+  /// After a call ends, pull the system call line into the transcript.
+  Future<void> onAudioCallFinished() async {
+    try {
+      await _mergeServerHistory();
+    } catch (_) {}
+    await refreshCallAvailability();
   }
 
   Future<void> _loadEmbedConfigCached() async {
@@ -436,6 +535,7 @@ class FrontFaceChatProvider extends ChangeNotifier
       );
       _identifyResult = result;
       _notify();
+      unawaited(refreshCallAvailability());
       return result;
     } on FrontFaceApiException catch (e) {
       throw FrontFaceIdentifyException(code: e.code, message: e.message);
@@ -1164,6 +1264,7 @@ class FrontFaceChatProvider extends ChangeNotifier
       await _pollStatus(forceAgentName: true);
     } catch (_) {}
     await _enterLiveMode();
+    unawaited(refreshCallAvailability());
   }
 
   /// Fallback-only poll while Realtime is down (LIVE_REPLIES §4.5).

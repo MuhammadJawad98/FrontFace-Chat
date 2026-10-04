@@ -37,7 +37,11 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Share your location with support so we can help you better.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Record audio to send to support.</string>
+	<string>Your microphone is used for voice messages and when you call the support team.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Attach a photo or video from your library for support.</string>
 	<key>UIApplicationSceneManifest</key>

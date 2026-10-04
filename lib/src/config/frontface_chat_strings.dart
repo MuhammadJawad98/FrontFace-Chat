@@ -108,6 +108,35 @@ class FrontFaceChatStrings {
   final String permissionOpenSettingsBody;
   final String openSettings;
 
+  // Audio calls
+  final String callSupport;
+  final String callingSupport;
+  final String callYouAreNext;
+  final String callPeopleAhead;
+  final String callReconnecting;
+  final String callEnded;
+  final String callNoAnswer;
+  final String callCancelled;
+  final String callCouldNotConnect;
+  final String callDisconnected;
+  final String callMoved;
+  final String callMovedDetail;
+  final String callClose;
+  final String callMute;
+  final String callUnmute;
+  final String callSpeaker;
+  final String callEarpiece;
+  final String callHangUp;
+  final String callMicRequired;
+  final String callMicPermanentlyDenied;
+  final String callNoAgents;
+  final String callBusy;
+  final String callOutsideHours;
+  final String callRateLimited;
+  final String callNotVerified;
+  final String callNetworkError;
+  final String callStartFailed;
+
   /// Unused by the SDK. Kept for backwards compatibility with apps that
   /// still pass a custom value. Session death is recovered silently via
   /// `ensure-conversation` — the user never sees an expiry message.
@@ -219,6 +248,38 @@ class FrontFaceChatStrings {
     this.permissionOpenSettingsBody =
         'Permission was denied. You can enable it in Settings.',
     this.openSettings = 'Open Settings',
+    this.callSupport = 'Call support',
+    this.callingSupport = 'Calling support…',
+    this.callYouAreNext = 'You are next.',
+    this.callPeopleAhead = '{count} people ahead of you.',
+    this.callReconnecting = 'Reconnecting…',
+    this.callEnded = 'Call ended',
+    this.callNoAnswer = 'No answer',
+    this.callCancelled = 'Call cancelled',
+    this.callCouldNotConnect = "Couldn't connect",
+    this.callDisconnected = 'Call disconnected',
+    this.callMoved = 'Call moved',
+    this.callMovedDetail = 'You joined this call on another device.',
+    this.callClose = 'Close',
+    this.callMute = 'Mute',
+    this.callUnmute = 'Unmute',
+    this.callSpeaker = 'Speaker',
+    this.callEarpiece = 'Phone',
+    this.callHangUp = 'Hang up',
+    this.callMicRequired = 'Allow the microphone to call us.',
+    this.callMicPermanentlyDenied =
+        'Turn on the microphone for this app in Settings to call us.',
+    this.callNoAgents =
+        'No one is available to take a call right now. Send us a message instead.',
+    this.callBusy = 'All our lines are busy. Please try again in a few minutes.',
+    this.callOutsideHours =
+        'Calls are answered during working hours. Send us a message instead.',
+    this.callRateLimited = 'Please wait a few minutes before calling again.',
+    this.callNotVerified = 'Sign in to call us.',
+    this.callNetworkError =
+        'No connection. Check your internet and try again.',
+    this.callStartFailed =
+        "We couldn't start the call. Send us a message instead.",
     this.sessionExpired = 'Your session has expired. Please start again.',
     this.title,
     this.textDirection = TextDirection.ltr,
@@ -319,6 +380,36 @@ class FrontFaceChatStrings {
     permissionOpenSettingsBody:
         'تم رفض الإذن. يمكنك تفعيله من الإعدادات.',
     openSettings: 'فتح الإعدادات',
+    callSupport: 'اتصل بالدعم',
+    callingSupport: 'جارٍ الاتصال بالدعم…',
+    callYouAreNext: 'أنت التالي.',
+    callPeopleAhead: '{count} أشخاص قبلك.',
+    callReconnecting: 'جارٍ إعادة الاتصال…',
+    callEnded: 'انتهت المكالمة',
+    callNoAnswer: 'لا إجابة',
+    callCancelled: 'أُلغيت المكالمة',
+    callCouldNotConnect: 'تعذّر الاتصال',
+    callDisconnected: 'انقطعت المكالمة',
+    callMoved: 'نُقلت المكالمة',
+    callMovedDetail: 'انضممت إلى هذه المكالمة من جهاز آخر.',
+    callClose: 'إغلاق',
+    callMute: 'كتم',
+    callUnmute: 'إلغاء الكتم',
+    callSpeaker: 'مكبر الصوت',
+    callEarpiece: 'سماعة الأذن',
+    callHangUp: 'إنهاء',
+    callMicRequired: 'اسمح بالميكروفون للاتصال بنا.',
+    callMicPermanentlyDenied:
+        'فعّل الميكروفون لهذا التطبيق من الإعدادات للاتصال بنا.',
+    callNoAgents:
+        'لا يوجد أحد متاح للرد الآن. أرسل لنا رسالة بدلًا من ذلك.',
+    callBusy: 'جميع الخطوط مشغولة. حاول بعد دقائق.',
+    callOutsideHours:
+        'يتم الرد على المكالمات خلال ساعات العمل. أرسل لنا رسالة بدلًا من ذلك.',
+    callRateLimited: 'انتظر بضع دقائق قبل الاتصال مجددًا.',
+    callNotVerified: 'سجّل الدخول للاتصال بنا.',
+    callNetworkError: 'لا يوجد اتصال. تحقق من الإنترنت وحاول مجددًا.',
+    callStartFailed: 'تعذر بدء المكالمة. أرسل لنا رسالة بدلًا من ذلك.',
     sessionExpired: 'انتهت جلستك. يرجى البدء من جديد.',
     title: 'الدعم',
   );
@@ -447,6 +538,33 @@ class FrontFaceChatStrings {
     String? permissionNotNow,
     String? permissionOpenSettingsBody,
     String? openSettings,
+    String? callSupport,
+    String? callingSupport,
+    String? callYouAreNext,
+    String? callPeopleAhead,
+    String? callReconnecting,
+    String? callEnded,
+    String? callNoAnswer,
+    String? callCancelled,
+    String? callCouldNotConnect,
+    String? callDisconnected,
+    String? callMoved,
+    String? callMovedDetail,
+    String? callClose,
+    String? callMute,
+    String? callUnmute,
+    String? callSpeaker,
+    String? callEarpiece,
+    String? callHangUp,
+    String? callMicRequired,
+    String? callMicPermanentlyDenied,
+    String? callNoAgents,
+    String? callBusy,
+    String? callOutsideHours,
+    String? callRateLimited,
+    String? callNotVerified,
+    String? callNetworkError,
+    String? callStartFailed,
     String? sessionExpired,
     String? title,
     bool clearTitle = false,
@@ -548,6 +666,34 @@ class FrontFaceChatStrings {
       permissionOpenSettingsBody:
           permissionOpenSettingsBody ?? this.permissionOpenSettingsBody,
       openSettings: openSettings ?? this.openSettings,
+      callSupport: callSupport ?? this.callSupport,
+      callingSupport: callingSupport ?? this.callingSupport,
+      callYouAreNext: callYouAreNext ?? this.callYouAreNext,
+      callPeopleAhead: callPeopleAhead ?? this.callPeopleAhead,
+      callReconnecting: callReconnecting ?? this.callReconnecting,
+      callEnded: callEnded ?? this.callEnded,
+      callNoAnswer: callNoAnswer ?? this.callNoAnswer,
+      callCancelled: callCancelled ?? this.callCancelled,
+      callCouldNotConnect: callCouldNotConnect ?? this.callCouldNotConnect,
+      callDisconnected: callDisconnected ?? this.callDisconnected,
+      callMoved: callMoved ?? this.callMoved,
+      callMovedDetail: callMovedDetail ?? this.callMovedDetail,
+      callClose: callClose ?? this.callClose,
+      callMute: callMute ?? this.callMute,
+      callUnmute: callUnmute ?? this.callUnmute,
+      callSpeaker: callSpeaker ?? this.callSpeaker,
+      callEarpiece: callEarpiece ?? this.callEarpiece,
+      callHangUp: callHangUp ?? this.callHangUp,
+      callMicRequired: callMicRequired ?? this.callMicRequired,
+      callMicPermanentlyDenied:
+          callMicPermanentlyDenied ?? this.callMicPermanentlyDenied,
+      callNoAgents: callNoAgents ?? this.callNoAgents,
+      callBusy: callBusy ?? this.callBusy,
+      callOutsideHours: callOutsideHours ?? this.callOutsideHours,
+      callRateLimited: callRateLimited ?? this.callRateLimited,
+      callNotVerified: callNotVerified ?? this.callNotVerified,
+      callNetworkError: callNetworkError ?? this.callNetworkError,
+      callStartFailed: callStartFailed ?? this.callStartFailed,
       sessionExpired: sessionExpired ?? this.sessionExpired,
       title: clearTitle ? null : (title ?? this.title),
       textDirection: textDirection ?? this.textDirection,

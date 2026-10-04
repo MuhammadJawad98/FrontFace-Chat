@@ -63,6 +63,19 @@ class FrontFaceChatConfig {
   /// location still shares the device GPS pin.
   final FrontFaceAttachmentsConfig attachments;
 
+  /// Show the Call button when the server says calls are available.
+  ///
+  /// Requires a verified customer (`identify`) and host platform setup
+  /// (microphone permission, Android foreground service — see README).
+  /// Defaults to `true`.
+  final bool enableCalls;
+
+  /// Start calls on the loudspeaker instead of the earpiece.
+  final bool callSpeakerOnAtStart;
+
+  /// Krisp noise cancellation on the customer's microphone (iOS/Android).
+  final bool callNoiseCancellation;
+
   const FrontFaceChatConfig({
     required this.projectId,
     required this.publishableKey,
@@ -72,5 +85,8 @@ class FrontFaceChatConfig {
     this.visitorId,
     this.showNewChatButton = true,
     this.attachments = FrontFaceAttachmentsConfig.disabled,
+    this.enableCalls = true,
+    this.callSpeakerOnAtStart = false,
+    this.callNoiseCancellation = true,
   });
 }

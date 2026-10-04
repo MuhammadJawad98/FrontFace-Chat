@@ -9,6 +9,8 @@ import 'src/provider/frontface_chat_provider.dart';
 import 'src/services/frontface_visitor_store.dart';
 import 'src/ui/frontface_chat_screen.dart';
 
+export 'src/calls/calls.dart';
+export 'src/calls/call_background.dart';
 export 'src/config/frontface_attachments_config.dart';
 export 'src/config/frontface_chat_config.dart';
 export 'src/config/frontface_chat_strings.dart';
@@ -16,6 +18,7 @@ export 'src/config/frontface_chat_theme.dart';
 export 'src/models/frontface_models.dart';
 export 'src/provider/frontface_chat_provider.dart';
 export 'src/ui/frontface_chat_screen.dart';
+export 'src/ui/widgets/frontface_call_screen.dart';
 export 'src/ui/widgets/frontface_lead_form.dart';
 export 'src/ui/widgets/frontface_message_bubble.dart';
 export 'src/ui/widgets/frontface_channel_buttons.dart';
