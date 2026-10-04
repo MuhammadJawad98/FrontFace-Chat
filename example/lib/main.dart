@@ -107,6 +107,76 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _openCallUiPreview({
+    CallPreviewPhase phase = CallPreviewPhase.ringing,
+    FrontFaceChatTheme? theme,
+  }) async {
+    final session = CallSession.preview(
+      phase: phase,
+      agentName: _isArabic ? 'وكيل الدعم' : 'Support Agent',
+    );
+    if (phase == CallPreviewPhase.ended) {
+      try {
+        await session.done.timeout(const Duration(seconds: 2));
+      } catch (_) {}
+    }
+    if (!mounted) {
+      await session.dispose();
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => FrontFaceCallScreen(
+          session: session,
+          strings: _strings,
+          theme: theme ?? const FrontFaceChatTheme(),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickCallUiPreview() async {
+    final phase = await showModalBottomSheet<CallPreviewPhase>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.ring_volume_outlined),
+                title: Text(
+                  _isArabic ? 'رنين → متصل' : 'Ringing → connected',
+                ),
+                subtitle: Text(
+                  _isArabic
+                      ? 'معاينة التدفق الكامل بدون مكالمة حقيقية'
+                      : 'Full flow preview without a real call',
+                ),
+                onTap: () => Navigator.pop(context, CallPreviewPhase.ringing),
+              ),
+              ListTile(
+                leading: const Icon(Icons.support_agent_outlined),
+                title: Text(_isArabic ? 'متصل' : 'Connected'),
+                onTap: () =>
+                    Navigator.pop(context, CallPreviewPhase.connected),
+              ),
+              ListTile(
+                leading: const Icon(Icons.call_end_outlined),
+                title: Text(_isArabic ? 'انتهت المكالمة' : 'Call ended'),
+                onTap: () => Navigator.pop(context, CallPreviewPhase.ended),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+    if (phase == null || !mounted) return;
+    await _openCallUiPreview(phase: phase);
+  }
+
   Future<void> _corruptSessionToken() async {
     if (!_formKey.currentState!.validate()) return;
     final projectId = _projectIdController.text.trim();
@@ -284,6 +354,16 @@ class _HomePageState extends State<HomePage> {
                     _isArabic
                         ? 'فتح المحادثة (سمة مخصصة)'
                         : 'Open chat (custom theme)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _pickCallUiPreview,
+                  icon: const Icon(Icons.call_outlined),
+                  label: Text(
+                    _isArabic
+                        ? 'معاينة واجهة المكالمة فقط'
+                        : 'Preview call UI only',
                   ),
                 ),
                 const SizedBox(height: 32),

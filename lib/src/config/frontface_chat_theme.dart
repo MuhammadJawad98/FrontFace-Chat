@@ -9,6 +9,14 @@ const kFrontFaceArabicFontFamily = 'FrontFaceArabic';
 /// - User (visitor): [userBubbleColor] / [userBubbleTextColor]
 /// - Agent / assistant: [assistantBubbleColor] / [assistantBubbleTextColor]
 ///
+/// Call screen colors are also optional — omit them to keep the immersive
+/// dark defaults, or override to match your brand:
+/// - [callBackgroundColor] / [callSurfaceColor]
+/// - [callOnBackgroundColor] / [callOnBackgroundMutedColor]
+/// - [callAccentColor] (pulse / status; defaults to white)
+/// - [callAvatarBackgroundColor] / [callAvatarIconColor]
+/// - [callHangUpColor]
+///
 /// Typography:
 /// - [fontFamily] — optional Latin / default UI font
 /// - [arabicFontFamily] — used when chat [TextDirection] is RTL (defaults to
@@ -45,6 +53,32 @@ class FrontFaceChatTheme {
   /// tappable link.
   final Color linkColor;
 
+  /// Full-screen call background.
+  final Color callBackgroundColor;
+
+  /// Call chips / inactive control fill.
+  final Color callSurfaceColor;
+
+  /// Primary text and icons on the call screen.
+  final Color callOnBackgroundColor;
+
+  /// Secondary text on the call screen (status detail, control labels).
+  final Color callOnBackgroundMutedColor;
+
+  /// Avatar ring, pulse, and status accents on the call screen.
+  /// Defaults to white so it stays visible on the dark call background.
+  final Color callAccentColor;
+
+  /// Fill behind the call / agent icon. Defaults to a light black
+  /// (`0xFF374151`) so it lifts off [callBackgroundColor].
+  final Color callAvatarBackgroundColor;
+
+  /// Call / agent icon color. Defaults to white.
+  final Color callAvatarIconColor;
+
+  /// Hang-up button fill.
+  final Color callHangUpColor;
+
   /// Optional font for LTR / default UI copy. When null, inherits the host
   /// app theme.
   final String? fontFamily;
@@ -70,6 +104,14 @@ class FrontFaceChatTheme {
     this.onlineIndicatorColor = const Color(0xFF17B26A),
     this.agentNameColor = const Color(0xFFF76E26),
     this.linkColor = const Color(0xFF2563EB),
+    this.callBackgroundColor = const Color(0xFF111827),
+    this.callSurfaceColor = const Color(0xFF1F2937),
+    this.callOnBackgroundColor = const Color(0xFFF9FAFB),
+    this.callOnBackgroundMutedColor = const Color(0xFF9CA3AF),
+    this.callAccentColor = const Color(0xFFF9FAFB),
+    this.callAvatarBackgroundColor = const Color(0xFF374151),
+    this.callAvatarIconColor = const Color(0xFFF9FAFB),
+    this.callHangUpColor = const Color(0xFFEF4444),
     this.fontFamily,
     this.arabicFontFamily = kFrontFaceArabicFontFamily,
   });
@@ -118,6 +160,14 @@ class FrontFaceChatTheme {
     Color? onlineIndicatorColor,
     Color? agentNameColor,
     Color? linkColor,
+    Color? callBackgroundColor,
+    Color? callSurfaceColor,
+    Color? callOnBackgroundColor,
+    Color? callOnBackgroundMutedColor,
+    Color? callAccentColor,
+    Color? callAvatarBackgroundColor,
+    Color? callAvatarIconColor,
+    Color? callHangUpColor,
     String? fontFamily,
     String? arabicFontFamily,
     bool clearFontFamily = false,
@@ -140,6 +190,17 @@ class FrontFaceChatTheme {
       onlineIndicatorColor: onlineIndicatorColor ?? this.onlineIndicatorColor,
       agentNameColor: agentNameColor ?? this.agentNameColor,
       linkColor: linkColor ?? this.linkColor,
+      callBackgroundColor: callBackgroundColor ?? this.callBackgroundColor,
+      callSurfaceColor: callSurfaceColor ?? this.callSurfaceColor,
+      callOnBackgroundColor:
+          callOnBackgroundColor ?? this.callOnBackgroundColor,
+      callOnBackgroundMutedColor:
+          callOnBackgroundMutedColor ?? this.callOnBackgroundMutedColor,
+      callAccentColor: callAccentColor ?? this.callAccentColor,
+      callAvatarBackgroundColor:
+          callAvatarBackgroundColor ?? this.callAvatarBackgroundColor,
+      callAvatarIconColor: callAvatarIconColor ?? this.callAvatarIconColor,
+      callHangUpColor: callHangUpColor ?? this.callHangUpColor,
       fontFamily: clearFontFamily ? null : (fontFamily ?? this.fontFamily),
       arabicFontFamily: clearArabicFontFamily
           ? null

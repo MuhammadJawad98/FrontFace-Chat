@@ -1,10 +1,26 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'api.dart';
 import 'call_state.dart';
 import 'media.dart';
 import 'models.dart';
 import 'room_state.dart';
+
+/// Starting point for [CallSession.preview] (UI demos only).
+enum CallPreviewPhase {
+  /// Connecting → ringing → connected (default walkthrough).
+  ringing,
+
+  /// Jump straight to an answered call.
+  connected,
+
+  /// Show the ended screen immediately.
+  ended,
+}
 
 /// One call, from tapping Call to the end. Read [state] and listen to [changes] to drive the call
 /// screen.
@@ -28,6 +44,76 @@ class CallSession {
         _media = media,
         _callId = started.callId {
     _subscription = _media.events.listen(_onEvent);
+  }
+
+  /// Local-only session for call UI / theme demos. No network and no microphone.
+  ///
+  /// Use with [FrontFaceCallScreen] from your example or host app:
+  /// ```dart
+  /// Navigator.of(context).push(MaterialPageRoute(
+  ///   builder: (_) => FrontFaceCallScreen(session: CallSession.preview()),
+  /// ));
+  /// ```
+  factory CallSession.preview({
+    CallPreviewPhase phase = CallPreviewPhase.ringing,
+    String agentName = 'Support Agent',
+    Duration connectDelay = const Duration(milliseconds: 500),
+    Duration ringDelay = const Duration(seconds: 2),
+  }) {
+    const callId = 'preview-call';
+    final connectedAt = DateTime.now();
+    final media = _PreviewMedia();
+    final api = CallsApi(
+      baseUrl: 'https://preview.local',
+      clientKey: 'pk_preview',
+      visitorId: 'preview-visitor',
+      conversationId: 'preview-conversation',
+      sessionToken: 'preview-session',
+      httpClient: MockClient((request) async {
+        final seconds = DateTime.now().difference(connectedAt).inSeconds;
+        final body = {
+          'call': {
+            'id': callId,
+            'status': 'ended',
+            'outcome': 'completed',
+            'endedBy': 'customer',
+            'durationSeconds': seconds < 0 ? 0 : seconds,
+            'queuePosition': null,
+            'agent': {'name': agentName},
+          },
+        };
+        return http.Response(
+          jsonEncode(body),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final started = StartedCall(
+      callId: callId,
+      status: phase == CallPreviewPhase.connected ? 'active' : 'ringing',
+      queuePosition: 1,
+      mediaUrl: 'wss://preview.local',
+      mediaToken: 'preview-token',
+      created: true,
+    );
+    final session = CallSession.internal(
+      api: api,
+      media: media,
+      started: started,
+    );
+    unawaited(
+      _drivePreview(
+        session: session,
+        media: media,
+        started: started,
+        phase: phase,
+        agentName: agentName,
+        connectDelay: connectDelay,
+        ringDelay: ringDelay,
+      ),
+    );
+    return session;
   }
 
   final CallsApi _api;
@@ -249,5 +335,81 @@ class CallSession {
     _emit(last);
     if (!_done.isCompleted) _done.complete(last);
     unawaited(_states.close());
+  }
+}
+
+Future<void> _drivePreview({
+  required CallSession session,
+  required _PreviewMedia media,
+  required StartedCall started,
+  required CallPreviewPhase phase,
+  required String agentName,
+  required Duration connectDelay,
+  required Duration ringDelay,
+}) async {
+  if (phase == CallPreviewPhase.ended) {
+    await session.hangUp();
+    return;
+  }
+
+  await Future<void>.delayed(connectDelay);
+  if (session.isOver) return;
+
+  if (phase == CallPreviewPhase.connected) {
+    media.roomMetadata = jsonEncode({
+      'v': 1,
+      'state': 'connected',
+      'queuePosition': null,
+    });
+    try {
+      await session.start(started);
+    } catch (_) {}
+    if (!session.isOver) media.emit(RemoteJoined(agentName));
+    return;
+  }
+
+  media.roomMetadata = jsonEncode({
+    'v': 1,
+    'state': 'ringing',
+    'queuePosition': 1,
+  });
+  try {
+    await session.start(started);
+  } catch (_) {}
+  if (session.isOver) return;
+
+  await Future<void>.delayed(ringDelay);
+  if (session.isOver) return;
+  media.emit(RemoteJoined(agentName));
+}
+
+class _PreviewMedia implements MediaConnection {
+  final _events = StreamController<MediaEvent>.broadcast();
+
+  @override
+  String? roomMetadata;
+
+  void emit(MediaEvent event) {
+    if (!_events.isClosed) _events.add(event);
+  }
+
+  @override
+  Stream<MediaEvent> get events => _events.stream;
+
+  @override
+  Future<void> connect(String url, String token) async {}
+
+  @override
+  Future<void> setMicrophoneEnabled(bool enabled) async {}
+
+  @override
+  Future<void> setSpeakerOn(bool on) async {}
+
+  @override
+  Future<void> disconnect() async {}
+
+  @override
+  Future<void> dispose() async {
+    await _events.close();
   }
 }

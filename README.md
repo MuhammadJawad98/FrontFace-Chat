@@ -282,6 +282,15 @@ await FrontFaceChat.open(
     assistantBubbleTextColor: Color(0xFF0F172A),
     assistantBubbleBorderColor: Color(0xFFE2E8F0),
     onlineIndicatorColor: Color(0xFF17B26A),
+    // Optional — audio call screen
+    callBackgroundColor: Color(0xFF0B1220),
+    callSurfaceColor: Color(0xFF1E293B),
+    callOnBackgroundColor: Color(0xFFF8FAFC),
+    callOnBackgroundMutedColor: Color(0xFF94A3B8),
+    callAccentColor: Color(0xFF38BDF8),
+    callAvatarBackgroundColor: Color(0xFF374151),
+    callAvatarIconColor: Color(0xFFF8FAFC),
+    callHangUpColor: Color(0xFFEF4444),
   ),
 );
 ```
@@ -290,7 +299,13 @@ Available theme properties: `primaryColor`, `onPrimaryColor`, `backgroundColor`,
 `inputBackgroundColor`, `userBubbleColor`, `userBubbleTextColor`,
 `assistantBubbleColor`, `assistantBubbleTextColor`, `assistantBubbleBorderColor`,
 `subtitleColor`, `errorColor`, `onlineIndicatorColor`, `agentNameColor`, `linkColor`,
+`callBackgroundColor`, `callSurfaceColor`, `callOnBackgroundColor`,
+`callOnBackgroundMutedColor`, `callAccentColor`, `callAvatarBackgroundColor`,
+`callAvatarIconColor`, `callHangUpColor`,
 `fontFamily`, `arabicFontFamily`.
+
+Call screen colors default to a dark immersive palette with a light-black avatar
+circle and white agent/call icon. Override any `call*` color to match your brand.
 
 For Arabic / RTL (`FrontFaceChatStrings.arabic`), the SDK uses the bundled
 **Noto Sans Arabic** family (`FrontFaceArabic`) by default. Override if needed:

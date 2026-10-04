@@ -1,3 +1,9 @@
+## 1.6.2
+
+* Calls UI: modern full-screen call layout with larger touch targets, labels, haptics, and pulse while ringing.
+* Theme: host-overridable call colors (`callBackgroundColor`, `callSurfaceColor`, `callAvatarBackgroundColor`, `callAvatarIconColor`, …).
+* `CallSession.preview()` for UI-only demos; example app adds “Preview call UI only”.
+
 ## 1.6.1
 
 * Calls UI: center the call screen (ringing / connected / ended) on full width.
