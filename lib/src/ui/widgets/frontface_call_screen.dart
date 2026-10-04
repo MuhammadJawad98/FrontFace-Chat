@@ -51,60 +51,71 @@ class _FrontFaceCallScreenState extends State<FrontFaceCallScreen> {
     final theme = widget.theme;
     return PopScope(
       canPop: session.isOver,
-      child: Scaffold(
-        backgroundColor: theme.backgroundColor,
-        body: SafeArea(
-          child: StreamBuilder<CallState>(
-            initialData: session.state,
-            stream: session.changes,
-            builder: (context, snapshot) {
-              final state = snapshot.data ?? session.state;
-              return Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  children: [
-                    const Spacer(),
-                    Icon(
-                      Icons.call,
-                      size: 56,
-                      color: theme.primaryColor,
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      _title(state),
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w600,
-                        color: theme.assistantBubbleTextColor,
+      child: Directionality(
+        textDirection: _s.textDirection,
+        child: Scaffold(
+          backgroundColor: theme.backgroundColor,
+          body: SafeArea(
+            child: StreamBuilder<CallState>(
+              initialData: session.state,
+              stream: session.changes,
+              builder: (context, snapshot) {
+                final state = snapshot.data ?? session.state;
+                final ended = state is CallEnded ||
+                    state is CallContinuedElsewhere;
+                return SizedBox.expand(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                      const Spacer(),
+                      Icon(
+                        Icons.call,
+                        size: 56,
+                        color: theme.primaryColor,
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _detail(state),
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: theme.subtitleColor,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const Spacer(),
-                    if (state is CallEnded || state is CallContinuedElsewhere)
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: theme.primaryColor,
-                          foregroundColor: theme.onPrimaryColor,
+                      const SizedBox(height: 24),
+                      Text(
+                        _title(state),
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                          color: theme.assistantBubbleTextColor,
                         ),
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: Text(_s.callClose),
-                      )
-                    else
-                      _controls(session),
-                  ],
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _detail(state),
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: theme.subtitleColor,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const Spacer(),
+                      if (ended)
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: theme.primaryColor,
+                              foregroundColor: theme.onPrimaryColor,
+                            ),
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: Text(_s.callClose),
+                          ),
+                        )
+                      else
+                        _controls(session),
+                    ],
+                  ),
                 ),
               );
             },
           ),
+        ),
         ),
       ),
     );

@@ -108,7 +108,7 @@ class FrontFaceChatStrings {
   final String permissionOpenSettingsBody;
   final String openSettings;
 
-  // Audio calls
+  // Audio calls (call screen + refusal toasts)
   final String callSupport;
   final String callingSupport;
   final String callYouAreNext;
@@ -136,6 +136,13 @@ class FrontFaceChatStrings {
   final String callNotVerified;
   final String callNetworkError;
   final String callStartFailed;
+
+  /// Chat transcript line for a completed call (CALLS_GUIDE §8).
+  /// Duration is appended as ` · m:ss` when known.
+  final String audioCall;
+
+  /// Chat transcript line for a missed call.
+  final String missedCall;
 
   /// Unused by the SDK. Kept for backwards compatibility with apps that
   /// still pass a custom value. Session death is recovered silently via
@@ -280,10 +287,38 @@ class FrontFaceChatStrings {
         'No connection. Check your internet and try again.',
     this.callStartFailed =
         "We couldn't start the call. Send us a message instead.",
+    this.audioCall = 'Audio call',
+    this.missedCall = 'Missed call',
     this.sessionExpired = 'Your session has expired. Please start again.',
     this.title,
     this.textDirection = TextDirection.ltr,
   });
+
+  /// Localized chat line for a system call message (from metadata, not server copy).
+  ///
+  /// Falls back to [fallback] (usually `message.content`) when [outcome] is
+  /// missing or unknown so older/history rows still render.
+  String formatCallTranscriptLine({
+    String? outcome,
+    int? durationSeconds,
+    String fallback = '',
+  }) {
+    String withDuration(String label) {
+      if (durationSeconds == null || durationSeconds < 0) return label;
+      final minutes = durationSeconds ~/ 60;
+      final seconds = (durationSeconds % 60).toString().padLeft(2, '0');
+      return '$label · $minutes:$seconds';
+    }
+
+    return switch (outcome) {
+      'completed' => withDuration(audioCall),
+      'missed' => missedCall,
+      'cancelled' => callCancelled,
+      'failed' => callCouldNotConnect,
+      'dropped' => withDuration(callDisconnected),
+      _ => fallback.trim().isNotEmpty ? fallback : callEnded,
+    };
+  }
 
   /// English defaults (LTR). Same as `const FrontFaceChatStrings()`.
   static const english = FrontFaceChatStrings();
@@ -410,6 +445,8 @@ class FrontFaceChatStrings {
     callNotVerified: 'سجّل الدخول للاتصال بنا.',
     callNetworkError: 'لا يوجد اتصال. تحقق من الإنترنت وحاول مجددًا.',
     callStartFailed: 'تعذر بدء المكالمة. أرسل لنا رسالة بدلًا من ذلك.',
+    audioCall: 'مكالمة صوتية',
+    missedCall: 'مكالمة فائتة',
     sessionExpired: 'انتهت جلستك. يرجى البدء من جديد.',
     title: 'الدعم',
   );
@@ -565,6 +602,8 @@ class FrontFaceChatStrings {
     String? callNotVerified,
     String? callNetworkError,
     String? callStartFailed,
+    String? audioCall,
+    String? missedCall,
     String? sessionExpired,
     String? title,
     bool clearTitle = false,
@@ -694,6 +733,8 @@ class FrontFaceChatStrings {
       callNotVerified: callNotVerified ?? this.callNotVerified,
       callNetworkError: callNetworkError ?? this.callNetworkError,
       callStartFailed: callStartFailed ?? this.callStartFailed,
+      audioCall: audioCall ?? this.audioCall,
+      missedCall: missedCall ?? this.missedCall,
       sessionExpired: sessionExpired ?? this.sessionExpired,
       title: clearTitle ? null : (title ?? this.title),
       textDirection: textDirection ?? this.textDirection,

@@ -321,8 +321,8 @@ FrontFaceChatScreen(theme: theme, extraBottomInset: 80);
 ### Strings (i18n) and RTL
 
 Every user-visible label (attachments, permissions, tickets, CSAT, offline form,
-image viewer, etc.) lives on [FrontFaceChatStrings]. Prefer the built-in packs
-so you do not re-translate every field:
+image viewer, **audio calls**, etc.) lives on [FrontFaceChatStrings]. Prefer the
+built-in packs so you do not re-translate every field:
 
 ```dart
 // English (default)
@@ -346,12 +346,33 @@ await FrontFaceChat.open(
 );
 ```
 
-Override individual keys when needed:
+Override individual keys when needed (including call UI / transcript lines):
 
 ```dart
 final strings = FrontFaceChatStrings.arabic.copyWith(
   attach: 'إضافة مرفق',
   title: 'المساعدة',
+  callSupport: 'اتصل بنا',
+  callingSupport: 'جارٍ الاتصال…',
+  callEnded: 'انتهت المكالمة',
+  audioCall: 'مكالمة صوتية',
+  missedCall: 'مكالمة فائتة',
+);
+```
+
+Or ship your own language on top of English defaults:
+
+```dart
+final strings = FrontFaceChatStrings.english.copyWith(
+  textDirection: TextDirection.ltr, // or rtl
+  callSupport: 'Appeler le support',
+  callingSupport: 'Appel en cours…',
+  callEnded: 'Appel terminé',
+  audioCall: 'Appel audio',
+  missedCall: 'Appel manqué',
+  callClose: 'Fermer',
+  callHangUp: 'Raccrocher',
+  // …override any other FrontFaceChatStrings field
 );
 ```
 

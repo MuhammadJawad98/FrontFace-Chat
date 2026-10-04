@@ -97,6 +97,13 @@ class FrontFaceMessageBubble extends StatelessWidget {
 
     if (isSystem) {
       final isCall = message.isCallMessage;
+      final label = isCall
+          ? strings.formatCallTranscriptLine(
+              outcome: message.metadata.callOutcome,
+              durationSeconds: message.metadata.callDurationSeconds,
+              fallback: message.content,
+            )
+          : message.content;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(
@@ -119,8 +126,8 @@ class FrontFaceMessageBubble extends StatelessWidget {
                 ],
                 Flexible(
                   child: Text(
-                    message.content,
-                    textDirection: detectTextDirection(message.content),
+                    label,
+                    textDirection: detectTextDirection(label),
                     style: TextStyle(fontSize: 12, color: theme.subtitleColor),
                     textAlign: TextAlign.center,
                   ),

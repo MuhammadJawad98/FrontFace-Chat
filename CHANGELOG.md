@@ -1,3 +1,9 @@
+## 1.6.1
+
+* Calls UI: center the call screen (ringing / connected / ended) on full width.
+* Calls i18n: transcript lines use `FrontFaceChatStrings` (`audioCall`, `missedCall`, …) so host apps can override EN/AR or add another language via `copyWith`.
+* Example: optional Identity JWT field so the Call button can appear (`identify` + availability).
+
 ## 1.6.0
 
 * Audio calls: Call button (when `GET …/calls/availability` says so), LiveKit media via folded `frontface_calls` client, call screen (ringing / connected / reconnecting / ended), mute / speaker / hang up.

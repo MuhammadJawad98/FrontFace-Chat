@@ -36,4 +36,43 @@ void main() {
     expect(FrontFaceChatStrings.forLanguage('AR_SA').attach, 'إضافة مرفق');
     expect(FrontFaceChatStrings.forLanguage('fr').attach, 'Add attachment');
   });
+
+  test('call packs cover screen and transcript lines', () {
+    expect(FrontFaceChatStrings.english.audioCall, 'Audio call');
+    expect(FrontFaceChatStrings.english.missedCall, 'Missed call');
+    expect(FrontFaceChatStrings.arabic.audioCall, 'مكالمة صوتية');
+    expect(FrontFaceChatStrings.arabic.missedCall, 'مكالمة فائتة');
+    expect(FrontFaceChatStrings.arabic.callEnded, 'انتهت المكالمة');
+  });
+
+  test('formatCallTranscriptLine uses host language', () {
+    const ar = FrontFaceChatStrings.arabic;
+    expect(
+      ar.formatCallTranscriptLine(outcome: 'completed', durationSeconds: 8),
+      'مكالمة صوتية · 0:08',
+    );
+    expect(ar.formatCallTranscriptLine(outcome: 'missed'), 'مكالمة فائتة');
+    expect(
+      ar.formatCallTranscriptLine(outcome: 'dropped', durationSeconds: 69),
+      'انقطعت المكالمة · 1:09',
+    );
+    expect(
+      ar.formatCallTranscriptLine(outcome: null, fallback: 'legacy'),
+      'legacy',
+    );
+  });
+
+  test('host can override call strings via copyWith', () {
+    final fr = FrontFaceChatStrings.english.copyWith(
+      callSupport: 'Appeler le support',
+      audioCall: 'Appel audio',
+      missedCall: 'Appel manqué',
+    );
+    expect(fr.callSupport, 'Appeler le support');
+    expect(
+      fr.formatCallTranscriptLine(outcome: 'completed', durationSeconds: 90),
+      'Appel audio · 1:30',
+    );
+    expect(fr.formatCallTranscriptLine(outcome: 'missed'), 'Appel manqué');
+  });
 }

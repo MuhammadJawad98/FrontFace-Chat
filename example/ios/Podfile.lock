@@ -2,6 +2,10 @@ PODS:
   - audioplayers_darwin (0.0.1):
     - Flutter
     - FlutterMacOS
+  - connectivity_plus (0.0.1):
+    - Flutter
+  - device_info_plus (0.0.1):
+    - Flutter
   - DKImagePickerController/Core (4.3.9):
     - DKImagePickerController/ImageDataManager
     - DKImagePickerController/Resource
@@ -37,6 +41,9 @@ PODS:
     - DKImagePickerController/PhotoGallery
     - Flutter
   - Flutter (1.0.0)
+  - flutter_webrtc (1.6.2):
+    - Flutter
+    - WebRTC-SDK (= 150.7871.01)
   - geolocator_apple (1.2.0):
     - Flutter
     - FlutterMacOS
@@ -50,6 +57,17 @@ PODS:
     - GoogleMaps/Maps (= 9.4.0)
   - GoogleMaps/Maps (9.4.0)
   - image_picker_ios (0.0.1):
+    - Flutter
+  - livekit_client (2.13.0):
+    - Flutter
+    - flutter_webrtc
+    - WebRTC-SDK (= 150.7871.01)
+  - livekit_noise_filter (0.0.1):
+    - Flutter
+    - flutter_webrtc
+    - LiveKitKrispNoiseFilter (= 0.0.8)
+  - LiveKitKrispNoiseFilter (0.0.8)
+  - open_filex (0.0.2):
     - Flutter
   - package_info_plus (0.4.5):
     - Flutter
@@ -66,14 +84,21 @@ PODS:
   - SwiftyGif (5.4.5)
   - url_launcher_ios (0.0.1):
     - Flutter
+  - WebRTC-SDK (150.7871.01)
 
 DEPENDENCIES:
   - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/darwin`)
+  - connectivity_plus (from `.symlinks/plugins/connectivity_plus/ios`)
+  - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
   - file_picker (from `.symlinks/plugins/file_picker/ios`)
   - Flutter (from `Flutter`)
+  - flutter_webrtc (from `.symlinks/plugins/flutter_webrtc/ios`)
   - geolocator_apple (from `.symlinks/plugins/geolocator_apple/darwin`)
   - google_maps_flutter_ios (from `.symlinks/plugins/google_maps_flutter_ios/ios`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
+  - livekit_client (from `.symlinks/plugins/livekit_client/ios`)
+  - livekit_noise_filter (from `.symlinks/plugins/livekit_noise_filter/ios`)
+  - open_filex (from `.symlinks/plugins/open_filex/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
   - record_ios (from `.symlinks/plugins/record_ios/ios`)
@@ -86,22 +111,36 @@ SPEC REPOS:
     - DKPhotoGallery
     - Google-Maps-iOS-Utils
     - GoogleMaps
+    - LiveKitKrispNoiseFilter
     - SDWebImage
     - SwiftyGif
+    - WebRTC-SDK
 
 EXTERNAL SOURCES:
   audioplayers_darwin:
     :path: ".symlinks/plugins/audioplayers_darwin/darwin"
+  connectivity_plus:
+    :path: ".symlinks/plugins/connectivity_plus/ios"
+  device_info_plus:
+    :path: ".symlinks/plugins/device_info_plus/ios"
   file_picker:
     :path: ".symlinks/plugins/file_picker/ios"
   Flutter:
     :path: Flutter
+  flutter_webrtc:
+    :path: ".symlinks/plugins/flutter_webrtc/ios"
   geolocator_apple:
     :path: ".symlinks/plugins/geolocator_apple/darwin"
   google_maps_flutter_ios:
     :path: ".symlinks/plugins/google_maps_flutter_ios/ios"
   image_picker_ios:
     :path: ".symlinks/plugins/image_picker_ios/ios"
+  livekit_client:
+    :path: ".symlinks/plugins/livekit_client/ios"
+  livekit_noise_filter:
+    :path: ".symlinks/plugins/livekit_noise_filter/ios"
+  open_filex:
+    :path: ".symlinks/plugins/open_filex/ios"
   package_info_plus:
     :path: ".symlinks/plugins/package_info_plus/ios"
   permission_handler_apple:
@@ -115,15 +154,22 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   audioplayers_darwin: 835ced6edd4c9fc8ebb0a7cc9e294a91d99917d5
+  connectivity_plus: cb623214f4e1f6ef8fe7403d580fdad517d2f7dd
+  device_info_plus: 21fcca2080fbcd348be798aa36c3e5ed849eefbe
   DKImagePickerController: 946cec48c7873164274ecc4624d19e3da4c1ef3c
   DKPhotoGallery: b3834fecb755ee09a593d7c9e389d8b5d6deed60
   file_picker: a0560bc09d61de87f12d246fc47d2119e6ef37be
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_webrtc: 99283145164f482a16bf7122ef407b5d59d43158
   geolocator_apple: ab36aa0e8b7d7a2d7639b3b4e48308394e8cef5e
   Google-Maps-iOS-Utils: 0a484b05ed21d88c9f9ebbacb007956edd508a96
   google_maps_flutter_ios: 17552876e72723da1d41accc22f03b5f7afbde69
   GoogleMaps: 0608099d4870cac8754bdba9b6953db543432438
   image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
+  livekit_client: 55f2f6afa597719985fa4913f6e889eb2b7eacd8
+  livekit_noise_filter: c17799461544de1e7019b28f6c458619ec8353ed
+  LiveKitKrispNoiseFilter: 36c07ad7b2eafbe49a0b2365df7941b7653b6a22
+  open_filex: 432f3cd11432da3e39f47fcc0df2b1603854eff1
   package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
   permission_handler_apple: 92d754bbaa7361d436db2d6c3c1c2a0fdcec462e
   record_ios: 980fd386a97a35987d0fce3dfda4b26a38c90f4c
@@ -131,6 +177,7 @@ SPEC CHECKSUMS:
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
   SwiftyGif: 706c60cf65fa2bc5ee0313beece843c8eb8194d4
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
+  WebRTC-SDK: 7dc931c64c00c735a614382f1a59cf65019c3c17
 
 PODFILE CHECKSUM: 0ddd84dd8444a7010d2f3e3945ad257250afd819
 

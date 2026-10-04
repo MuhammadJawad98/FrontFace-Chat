@@ -41,6 +41,7 @@ class _HomePageState extends State<HomePage> {
   final _projectIdController = TextEditingController();
   final _publishableKeyController = TextEditingController();
   final _mapsKeyController = TextEditingController();
+  final _identityJwtController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   String? _debugStatus;
   ExampleLanguage _language = ExampleLanguage.english;
@@ -57,6 +58,7 @@ class _HomePageState extends State<HomePage> {
     _projectIdController.dispose();
     _publishableKeyController.dispose();
     _mapsKeyController.dispose();
+    _identityJwtController.dispose();
     super.dispose();
   }
 
@@ -68,6 +70,8 @@ class _HomePageState extends State<HomePage> {
     return FrontFaceChatConfig(
       projectId: _projectIdController.text.trim(),
       publishableKey: _publishableKeyController.text.trim(),
+      debugLogging: true,
+      enableCalls: true,
       // Attachments are off by default in the SDK — enable them here for demos.
       // Maps key is optional: with a key → map picker; without → GPS share only.
       attachments: FrontFaceAttachmentsConfig(
@@ -82,6 +86,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openChat({FrontFaceChatTheme? theme}) async {
     final config = _buildConfig();
     if (config == null || !mounted) return;
+    final identityJwt = _identityJwtController.text.trim();
 
     // Custom route so the example can switch language while chat is open
     // via FrontFaceChatProvider.updateStrings().
@@ -95,6 +100,7 @@ class _HomePageState extends State<HomePage> {
           child: _ExampleChatHost(
             theme: theme ?? const FrontFaceChatTheme(),
             initialLanguage: _language,
+            identityJwt: identityJwt.isEmpty ? null : identityJwt,
           ),
         ),
       ),
@@ -234,7 +240,27 @@ class _HomePageState extends State<HomePage> {
                             'also set the same key in AppDelegate & AndroidManifest, then rebuild.',
                     helperMaxLines: 4,
                   ),
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _identityJwtController,
+                  decoration: InputDecoration(
+                    labelText: _isArabic
+                        ? 'رمز الهوية JWT (مطلوب لزر الاتصال)'
+                        : 'Identity JWT (required for Call button)',
+                    hintText: 'eyJ…',
+                    border: const OutlineInputBorder(),
+                    helperText: _isArabic
+                        ? 'بدون JWT يبقى زر الاتصال مخفياً (not_verified). '
+                            'الصقه من باكندك بعد تسجيل الدخول، ثم افتح المحادثة وأكمل النموذج.'
+                        : 'Without a JWT the Call button stays hidden (not_verified). '
+                            'Paste the token your backend mints after login, then open '
+                            'chat and finish the lead form.',
+                    helperMaxLines: 4,
+                  ),
                   textInputAction: TextInputAction.done,
+                  maxLines: 3,
                   onFieldSubmitted: (_) => _openChat(),
                 ),
                 const SizedBox(height: 28),
@@ -325,10 +351,12 @@ class _HomePageState extends State<HomePage> {
 class _ExampleChatHost extends StatefulWidget {
   final FrontFaceChatTheme theme;
   final ExampleLanguage initialLanguage;
+  final String? identityJwt;
 
   const _ExampleChatHost({
     required this.theme,
     required this.initialLanguage,
+    this.identityJwt,
   });
 
   @override
@@ -337,16 +365,60 @@ class _ExampleChatHost extends StatefulWidget {
 
 class _ExampleChatHostState extends State<_ExampleChatHost> {
   late ExampleLanguage _language = widget.initialLanguage;
+  var _identifyStarted = false;
+  String? _identifyStatus;
 
   FrontFaceChatStrings get _strings => switch (_language) {
         ExampleLanguage.english => _englishStrings,
         ExampleLanguage.arabic => _arabicStrings,
       };
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tryIdentify());
+  }
+
+  Future<void> _tryIdentify() async {
+    final jwt = widget.identityJwt?.trim();
+    if (jwt == null || jwt.isEmpty || _identifyStarted || !mounted) return;
+    _identifyStarted = true;
+    final provider = context.read<FrontFaceChatProvider>();
+
+    // Wait until chat init finishes (visitor/session), then identify.
+    for (var i = 0; i < 40 && mounted && provider.isInitializing; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    if (!mounted) return;
+
+    try {
+      await FrontFaceChat.identify(provider: provider, identityToken: jwt);
+      if (!mounted) return;
+      setState(() => _identifyStatus = 'identify: ok');
+      await provider.refreshCallAvailability();
+      if (!mounted) return;
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _identifyStatus = 'identify failed: $e');
+    }
+  }
+
   void _setLanguage(ExampleLanguage language) {
     if (language == _language) return;
     setState(() => _language = language);
     context.read<FrontFaceChatProvider>().updateStrings(_strings);
+  }
+
+  String _callDebugLabel(FrontFaceChatProvider provider) {
+    if (provider.showCallButton) return 'Call button: visible';
+    final reason = provider.callAvailability?.reason;
+    if (widget.identityJwt == null || widget.identityJwt!.trim().isEmpty) {
+      return 'Call button hidden: paste Identity JWT on home (not_verified)';
+    }
+    if (reason != null) return 'Call button hidden: ${reason.name}';
+    if (provider.isInitializing) return 'Call button: waiting for session…';
+    return 'Call button hidden: finish lead form / wait for session';
   }
 
   @override
@@ -384,6 +456,41 @@ class _ExampleChatHostState extends State<_ExampleChatHost> {
                     onSelectionChanged: (value) => _setLanguage(value.first),
                   ),
                 ),
+              ),
+            ),
+          ),
+        ),
+        SafeArea(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Consumer<FrontFaceChatProvider>(
+                builder: (context, provider, _) {
+                  final lines = <String>[
+                    _callDebugLabel(provider),
+                    if (_identifyStatus != null) _identifyStatus!,
+                  ];
+                  return Material(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Text(
+                        lines.join('\n'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
