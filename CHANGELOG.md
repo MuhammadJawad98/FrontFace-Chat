@@ -1,3 +1,9 @@
+## 1.7.0
+
+* Calls from support (incoming): register/unregister device, parse call pushes, answer/decline, long-poll `stoppedRinging`, and rejoin via answer — same contract as mobile-sdk `frontface_calls` 0.2.0.
+* `FrontFaceChatConfig.callDeviceStore` for secure device credentials; provider helpers `registerCallDevice`, `unregisterCallDevice`, `incomingCall`, `isCallPush` / `parseCallPush`.
+* Calls API v2: `X-FrontFace-Calls-Version: 2`, `CallsException.callId` for `CALL_IN_PROGRESS`, `CallEndDetail` / `answeredHere` on results.
+
 ## 1.6.2
 
 * Calls UI: modern full-screen call layout with larger touch targets, labels, haptics, and pulse while ringing.

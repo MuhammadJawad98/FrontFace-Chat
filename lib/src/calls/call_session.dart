@@ -9,6 +9,7 @@ import 'call_state.dart';
 import 'media.dart';
 import 'models.dart';
 import 'room_state.dart';
+import 'transport.dart';
 
 /// Starting point for [CallSession.preview] (UI demos only).
 enum CallPreviewPhase {
@@ -29,20 +30,20 @@ enum CallPreviewPhase {
 /// - Hanging up tells the server first, then leaves the audio. Leaving first would make an answered
 ///   call end as "dropped" after the server's 30 s grace instead of "completed".
 /// - It never ends a call on its own: when the audio drops it asks the server, and rejoins while the
-///   server still has the call ringing or active (with a fresh token from `POST …/calls`).
+///   server still has the call ringing or active (with a fresh token: `POST …/calls` for a call the
+///   customer made, answering again for a call from support).
 /// - The outcome shown at the end is always the server's (`GET …/calls/{id}`).
 class CallSession {
   CallSession.internal({
-    required CallsApi api,
+    required CallTransport api,
     required MediaConnection media,
     required StartedCall started,
-    this.platform,
-    this.appVersion,
     this.rejoinWindow = const Duration(seconds: 25),
     this.retryDelays = const [Duration(seconds: 1), Duration(seconds: 2), Duration(seconds: 4)],
   })  : _api = api,
         _media = media,
-        _callId = started.callId {
+        _callId = started.callId,
+        _agentName = started.agentName {
     _subscription = _media.events.listen(_onEvent);
   }
 
@@ -96,6 +97,7 @@ class CallSession {
       mediaUrl: 'wss://preview.local',
       mediaToken: 'preview-token',
       created: true,
+      agentName: agentName,
     );
     final session = CallSession.internal(
       api: api,
@@ -116,10 +118,8 @@ class CallSession {
     return session;
   }
 
-  final CallsApi _api;
+  final CallTransport _api;
   final MediaConnection _media;
-  final String? platform;
-  final String? appVersion;
 
   /// How long to keep trying to get the audio back after a drop (the server waits 30 s).
   final Duration rejoinWindow;
@@ -291,18 +291,17 @@ class CallSession {
   Future<bool> _rejoin() async {
     final StartedCall again;
     try {
-      again = await _api.start(platform: platform, appVersion: appVersion);
+      switch (await _api.rejoin(_callId)) {
+        case Rejoin(:final call):
+          again = call;
+        case CallGone():
+          // The call ended in between (and anything the request started is ended again).
+          final ended = await _tryGet();
+          _finish(CallEnded(ended ?? CallResult.unknown(_callId)));
+          return true;
+      }
     } catch (_) {
       return false;
-    }
-    if (again.callId != _callId) {
-      // This call ended in between and the request started a new one, which nobody asked for.
-      try {
-        await _api.end(again.callId);
-      } catch (_) {}
-      final ended = await _tryGet();
-      _finish(CallEnded(ended ?? CallResult.unknown(_callId)));
-      return true;
     }
     try {
       await _media.connect(again.mediaUrl, again.mediaToken);

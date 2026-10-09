@@ -354,17 +354,25 @@ class FrontFaceChatProvider extends ChangeNotifier
     }
   }
 
-  FrontFaceCalls _calls() {
+  FrontFaceCalls _calls({String? appVersion}) {
     final visitor = _visitorId;
     if (visitor == null || visitor.isEmpty) {
       throw StateError('visitorId required before calling');
     }
-    return _callsClient ??= FrontFaceCalls(
+    final existing = _callsClient;
+    if (existing != null &&
+        existing.visitorId == visitor &&
+        (appVersion == null || existing.appVersion == appVersion)) {
+      return existing;
+    }
+    return _callsClient = FrontFaceCalls(
       baseUrl: _chatConfig.baseUrl,
       clientKey: _chatConfig.publishableKey,
       visitorId: visitor,
+      appVersion: appVersion ?? existing?.appVersion,
       noiseCancellation: _chatConfig.callNoiseCancellation,
       speakerOnAtStart: _chatConfig.callSpeakerOnAtStart,
+      deviceStore: _chatConfig.callDeviceStore,
     );
   }
 
@@ -395,6 +403,8 @@ class FrontFaceChatProvider extends ChangeNotifier
   ///
   /// Throws [CallsException] when the server refuses. On Android, start the
   /// microphone foreground service before calling this (see CALLS_GUIDE §5).
+  /// With [CallsErrorCode.callInProgress], support is calling: use
+  /// [CallsException.callId] with [incomingCall].
   Future<CallSession> startAudioCall({String? appVersion}) async {
     if (_visitorId == null || _sessionId == null || _sessionToken == null) {
       throw const CallsException(
@@ -406,16 +416,7 @@ class FrontFaceChatProvider extends ChangeNotifier
     _isStartingCall = true;
     _notify();
     try {
-      final client = FrontFaceCalls(
-        baseUrl: _chatConfig.baseUrl,
-        clientKey: _chatConfig.publishableKey,
-        visitorId: _visitorId!,
-        appVersion: appVersion,
-        noiseCancellation: _chatConfig.callNoiseCancellation,
-        speakerOnAtStart: _chatConfig.callSpeakerOnAtStart,
-      );
-      _callsClient = client;
-      return await client.startCall(
+      return await _calls(appVersion: appVersion).startCall(
         conversationId: _sessionId!,
         sessionToken: _sessionToken!,
       );
@@ -424,6 +425,48 @@ class FrontFaceChatProvider extends ChangeNotifier
       _notify();
     }
   }
+
+  /// Registers this phone for calls from support. Needs
+  /// [FrontFaceChatConfig.callDeviceStore] and an active conversation.
+  ///
+  /// Call after identify / sign-in, on every launch while signed in, and when
+  /// the push token changes (iOS PushKit VoIP token; Android FCM).
+  Future<void> registerCallDevice({
+    required String pushToken,
+    ApnsEnvironment apnsEnvironment = ApnsEnvironment.production,
+    bool force = false,
+    String? appVersion,
+  }) async {
+    if (_visitorId == null || _sessionId == null || _sessionToken == null) {
+      throw const CallsException(
+        status: 0,
+        code: CallsErrorCode.sessionInvalid,
+        message: 'No active conversation',
+      );
+    }
+    await _calls(appVersion: appVersion).registerDevice(
+      conversationId: _sessionId!,
+      sessionToken: _sessionToken!,
+      pushToken: pushToken,
+      apnsEnvironment: apnsEnvironment,
+      force: force,
+    );
+  }
+
+  /// Stops this phone ringing for the customer (sign-out / account switch).
+  Future<void> unregisterCallDevice() => _calls().unregisterDevice();
+
+  /// A call from support ringing on this phone (call id from the push or
+  /// system call screen). Needs only [FrontFaceChatConfig.callDeviceStore].
+  Future<IncomingCall> incomingCall(String callId, {String? agentName}) =>
+      _calls().incomingCall(callId, agentName: agentName);
+
+  /// Whether a push is a FrontFace call push (host push handlers must ignore these).
+  static bool isCallPush(Map<dynamic, dynamic> data) => FrontFaceCalls.isCallPush(data);
+
+  /// Parses a FrontFace call push; null for any other payload.
+  static CallPush? parseCallPush(Map<dynamic, dynamic> data) =>
+      FrontFaceCalls.parsePush(data);
 
   /// After a call ends, pull the system call line into the transcript.
   Future<void> onAudioCallFinished() async {

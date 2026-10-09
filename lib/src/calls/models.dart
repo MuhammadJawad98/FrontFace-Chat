@@ -80,6 +80,38 @@ enum CallOutcome {
       };
 }
 
+/// Why a call from support ended without being answered on this phone (set by the server for calls from
+/// support only).
+enum CallEndDetail {
+  /// The customer declined it (or hung up before answering).
+  declined,
+
+  /// Nobody answered before the ring time ran out.
+  noAnswer,
+
+  /// None of the customer's phones could be reached.
+  unreachable,
+
+  /// Another of the customer's phones answered it.
+  answeredElsewhere,
+
+  /// The agent cancelled before anyone answered.
+  agentCancelled,
+
+  /// A reason this package version does not know.
+  unknown;
+
+  static CallEndDetail? parse(String? value) => switch (value) {
+        null => null,
+        'declined' => declined,
+        'no_answer' => noAnswer,
+        'unreachable' => unreachable,
+        'answered_elsewhere' => answeredElsewhere,
+        'agent_cancelled' => agentCancelled,
+        _ => unknown,
+      };
+}
+
 /// Who ended the call.
 enum CallEndedBy {
   customer,
@@ -107,6 +139,8 @@ class CallResult {
     required this.durationSeconds,
     required this.queuePosition,
     required this.agentName,
+    this.endDetail,
+    this.answeredHere,
   });
 
   /// What the app reports when it could not reach the server to ask.
@@ -116,7 +150,9 @@ class CallResult {
         endedBy = CallEndedBy.unknown,
         durationSeconds = null,
         queuePosition = null,
-        agentName = null;
+        agentName = null,
+        endDetail = null,
+        answeredHere = null;
 
   factory CallResult.fromJson(Map<String, dynamic> json) {
     final agent = json['agent'];
@@ -132,6 +168,8 @@ class CallResult {
       durationSeconds: (json['durationSeconds'] as num?)?.toInt(),
       queuePosition: (json['queuePosition'] as num?)?.toInt(),
       agentName: agent is Map ? agent['name'] as String? : null,
+      endDetail: CallEndDetail.parse(json['endDetail'] as String?),
+      answeredHere: json['answeredHere'] as bool?,
     );
   }
 
@@ -150,15 +188,22 @@ class CallResult {
   /// 1 = next in line, while ringing.
   final int? queuePosition;
 
-  /// The agent who answered (display name), if any.
+  /// The agent who answered (display name), if any. For a call from support: the agent who called.
   final String? agentName;
+
+  /// For a call from support that was not answered here: why it ended.
+  final CallEndDetail? endDetail;
+
+  /// For a call from support: whether it was answered on this phone (null for calls the customer made).
+  final bool? answeredHere;
 
   bool get isEnded => status == 'ended';
 
   @override
   String toString() =>
       'CallResult($callId, $status, outcome: $outcome, endedBy: $endedBy, '
-      'duration: $durationSeconds, agent: $agentName)';
+      'duration: $durationSeconds, agent: $agentName'
+      '${endDetail == null ? '' : ', detail: $endDetail'})';
 }
 
 /// A request the server refused, or a failure reaching it.
@@ -168,6 +213,7 @@ class CallsException implements Exception {
     required this.code,
     required this.message,
     this.retryAfterSeconds,
+    this.callId,
   });
 
   /// HTTP status, or 0 when the server could not be reached.
@@ -179,6 +225,9 @@ class CallsException implements Exception {
 
   /// For `RATE_LIMITED`: seconds until a new call can be started.
   final int? retryAfterSeconds;
+
+  /// For `CALL_IN_PROGRESS`: the call from support that is open, to answer (or rejoin) instead.
+  final String? callId;
 
   @override
   String toString() => 'CallsException($status $code: $message)';
@@ -196,6 +245,25 @@ abstract final class CallsErrorCode {
   static const notFound = 'NOT_FOUND';
   static const clientKeyRequired = 'CLIENT_KEY_REQUIRED';
   static const sessionInvalid = 'SESSION_INVALID';
+
+  /// A call from support is open for this customer; [CallsException.callId] is that call.
+  static const callInProgress = 'CALL_IN_PROGRESS';
+
+  /// Calls from support: the call is over (cancelled, missed, or ended) before this phone acted on it.
+  static const callEnded = 'CALL_ENDED';
+
+  /// Calls from support: another of the customer's phones answered.
+  static const callAnsweredElsewhere = 'CALL_ANSWERED_ELSEWHERE';
+
+  /// Calls from support: this phone's registration is gone (signed out, or replaced). Register again.
+  static const deviceInvalid = 'DEVICE_INVALID';
+
+  /// Calls from support: this phone has not registered (no stored credential).
+  static const deviceNotRegistered = 'DEVICE_NOT_REGISTERED';
+
+  /// Calls from support: the push token is registered to another account that hasn't signed out on this
+  /// phone. Carry on; it registers once that account signs out.
+  static const tokenInUse = 'TOKEN_IN_USE';
 
   /// The server could not be reached (no network, timeout).
   static const network = 'NETWORK';

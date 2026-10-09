@@ -1,9 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'http_json.dart';
 import 'models.dart';
+import 'transport.dart';
+
+/// This package's version, sent when a phone registers for calls from support.
+const packageVersion = '1.7.0';
 
 /// The answer to `POST …/calls`: the call, and where and how to join its audio.
 class StartedCall {
@@ -14,6 +18,7 @@ class StartedCall {
     required this.mediaUrl,
     required this.mediaToken,
     required this.created,
+    this.agentName,
   });
 
   final String callId;
@@ -28,10 +33,23 @@ class StartedCall {
 
   /// 201: a new call. 200: the customer's call that was already open.
   final bool created;
+
+  /// For a call from support: the agent who called (they are already in the call).
+  final String? agentName;
+}
+
+/// What the server answered to a phone's registration for calls from support.
+class RegisteredDevice {
+  const RegisteredDevice({required this.id, required this.secret});
+  final String id;
+
+  /// Only for a new registration (201). Null when the phone re-registered with its credential (200):
+  /// the secret it holds stays valid.
+  final String? secret;
 }
 
 /// The four call endpoints of the FrontFace app API. One instance per conversation and session.
-class CallsApi {
+class CallsApi implements CallTransport {
   CallsApi({
     required this.baseUrl,
     required this.clientKey,
@@ -40,6 +58,8 @@ class CallsApi {
     required this.sessionToken,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 15),
+    this.platform,
+    this.appVersion,
   }) : _http = httpClient ?? http.Client();
 
   final String baseUrl;
@@ -48,6 +68,10 @@ class CallsApi {
   final String conversationId;
   final String sessionToken;
   final Duration timeout;
+
+  /// Sent with each start (and rejoin), so problems can be matched to a platform and app release.
+  final String? platform;
+  final String? appVersion;
   final http.Client _http;
 
   String get _base =>
@@ -59,6 +83,8 @@ class CallsApi {
         'X-FrontFace-Key': clientKey,
         'X-Visitor-Id': visitorId,
         'X-FrontFace-Session': sessionToken,
+        // Version 2: a refusal because a call from support is open carries that call's id.
+        'X-FrontFace-Calls-Version': '2',
       };
 
   Future<CallAvailability> availability() async {
@@ -72,8 +98,8 @@ class CallsApi {
   /// Starts a call, or returns the customer's open call with a fresh token to rejoin it.
   Future<StartedCall> start({String? platform, String? appVersion}) async {
     final body = <String, dynamic>{
-      if (platform != null) 'platform': platform,
-      if (appVersion != null) 'appVersion': appVersion,
+      if ((platform ?? this.platform) != null) 'platform': platform ?? this.platform,
+      if ((appVersion ?? this.appVersion) != null) 'appVersion': appVersion ?? this.appVersion,
     };
     late int status;
     final json = await _send('POST', _base, body: body, onStatus: (s) => status = s);
@@ -89,12 +115,13 @@ class CallsApi {
     );
   }
 
+  @override
   Future<CallResult> get(String callId) async {
     final json = await _send('GET', '$_base/${Uri.encodeComponent(callId)}');
     return CallResult.fromJson(json['call'] as Map<String, dynamic>);
   }
 
-  /// Hangs up ([connectFailed] false) or reports that the audio connection could not be made.
+  @override
   Future<CallResult> end(String callId, {bool connectFailed = false}) async {
     final json = await _send(
       'POST',
@@ -104,6 +131,45 @@ class CallsApi {
     return CallResult.fromJson(json['call'] as Map<String, dynamic>);
   }
 
+  /// A rejoin asks `POST …/calls` again: it returns the customer's open call with a fresh token. If that
+  /// call ended in between, the request started a new call that nobody asked for: end it.
+  @override
+  Future<RejoinResult> rejoin(String callId) async {
+    final again = await start();
+    if (again.callId == callId) return Rejoin(again);
+    try {
+      await end(again.callId);
+    } catch (_) {}
+    return const CallGone();
+  }
+
+  /// Registers this phone for calls from support (`POST …/calls/devices`). [credential] is the one the
+  /// phone already holds, so a re-registration keeps it.
+  Future<RegisteredDevice> registerDevice({
+    required String platform,
+    required String pushToken,
+    String? apnsEnvironment,
+    String? appVersion,
+    String? credential,
+  }) async {
+    final json = await _send(
+      'POST',
+      '$_base/devices',
+      body: {
+        'platform': platform,
+        'pushToken': pushToken,
+        'packageVersion': packageVersion,
+        if (apnsEnvironment != null) 'apnsEnvironment': apnsEnvironment,
+        if (appVersion != null) 'appVersion': appVersion,
+      },
+      extraHeaders: {
+        if (credential != null) 'X-FrontFace-Device': credential,
+      },
+    );
+    final device = json['device'] as Map<String, dynamic>;
+    return RegisteredDevice(id: device['id'] as String, secret: device['secret'] as String?);
+  }
+
   void close() => _http.close();
 
   Future<Map<String, dynamic>> _send(
@@ -111,34 +177,8 @@ class CallsApi {
     String url, {
     Map<String, dynamic>? body,
     void Function(int status)? onStatus,
-  }) async {
-    final http.Response res;
-    try {
-      final request = http.Request(method, Uri.parse(url))..headers.addAll(_headers);
-      if (body != null) request.body = jsonEncode(body);
-      res = await http.Response.fromStream(await _http.send(request).timeout(timeout));
-    } on TimeoutException {
-      throw const CallsException(
-          status: 0, code: CallsErrorCode.network, message: 'The request timed out');
-    } catch (e) {
-      throw CallsException(status: 0, code: CallsErrorCode.network, message: '$e');
-    }
-    onStatus?.call(res.statusCode);
-    Object? decoded;
-    try {
-      decoded = res.body.isEmpty ? null : jsonDecode(res.body);
-    } on FormatException {
-      decoded = null;
-    }
-    if (res.statusCode >= 200 && res.statusCode < 300 && decoded is Map<String, dynamic>) {
-      return decoded;
-    }
-    final error = decoded is Map ? decoded['error'] : null;
-    throw CallsException(
-      status: res.statusCode,
-      code: error is Map ? (error['code'] as String? ?? 'HTTP_${res.statusCode}') : 'HTTP_${res.statusCode}',
-      message: error is Map ? (error['message'] as String? ?? '') : res.reasonPhrase ?? '',
-      retryAfterSeconds: error is Map ? (error['retryAfter'] as num?)?.toInt() : null,
-    );
-  }
+    Map<String, String> extraHeaders = const {},
+  }) =>
+      sendJson(_http, method, url,
+          headers: {..._headers, ...extraHeaders}, timeout: timeout, body: body, onStatus: onStatus);
 }

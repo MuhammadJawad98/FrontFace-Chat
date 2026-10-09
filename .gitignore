@@ -35,6 +35,7 @@ secrets/
 HISTORY_*.md
 DOCUMENTS_GUIDE.md
 docs/
+mobile-sdk/
 
 # IntelliJ related
 *.iml

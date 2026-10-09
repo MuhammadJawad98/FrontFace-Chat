@@ -1,3 +1,4 @@
+import '../calls/device_store.dart';
 import 'frontface_attachments_config.dart';
 
 export 'frontface_attachments_config.dart';
@@ -76,6 +77,12 @@ class FrontFaceChatConfig {
   /// Krisp noise cancellation on the customer's microphone (iOS/Android).
   final bool callNoiseCancellation;
 
+  /// Secure storage for this phone's registration when support can call the
+  /// customer. Required for [FrontFaceCalls.registerDevice] /
+  /// [FrontFaceCalls.incomingCall]. Use Keychain / Keystore (e.g.
+  /// `flutter_secure_storage`). Leave null if the host only makes outbound calls.
+  final CallDeviceStore? callDeviceStore;
+
   const FrontFaceChatConfig({
     required this.projectId,
     required this.publishableKey,
@@ -88,5 +95,6 @@ class FrontFaceChatConfig {
     this.enableCalls = true,
     this.callSpeakerOnAtStart = false,
     this.callNoiseCancellation = true,
+    this.callDeviceStore,
   });
 }

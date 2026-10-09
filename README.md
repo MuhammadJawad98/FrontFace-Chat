@@ -228,6 +228,8 @@ Then run `cd ios && pod install`.
 
 ### Audio calls
 
+**Full host integration (outbound + inbound):** see [CALLS_INTEGRATION.md](CALLS_INTEGRATION.md).
+
 Verified customers can call support when the server reports availability. The SDK
 shows a Call button in the chat app bar, joins LiveKit audio, and appends a call
 line to the transcript when the call ends.
@@ -259,6 +261,11 @@ FrontFaceChatConfig(
 
 Customers must be identified (`FrontFaceChat.identify`) or the button stays hidden
 (`not_verified`). Set `enableCalls: false` to hide calling entirely.
+
+**Calls from support** (incoming): provide a `CallDeviceStore` (secure storage), then
+`registerCallDevice` after identify / on launch / when the push token changes.
+Parse pushes with `FrontFaceChatProvider.isCallPush` / `parseCallPush`, then
+`incomingCall(callId)` to answer or decline. Unregister on sign-out.
 
 Permissions use the **native** system dialog. An in-app popup appears only if access
 is permanently denied (to open Settings) or location services are off.

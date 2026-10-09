@@ -3,3 +3,5 @@
 HISTORY_*.md
 DOCUMENTS_GUIDE.md
 docs/
+mobile-sdk/
+build/
