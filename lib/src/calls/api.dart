@@ -7,7 +7,7 @@ import 'models.dart';
 import 'transport.dart';
 
 /// This package's version, sent when a phone registers for calls from support.
-const packageVersion = '1.7.0';
+const packageVersion = '1.7.1';
 
 /// The answer to `POST …/calls`: the call, and where and how to join its audio.
 class StartedCall {
@@ -83,11 +83,16 @@ class CallsApi implements CallTransport {
         'X-FrontFace-Key': clientKey,
         'X-Visitor-Id': visitorId,
         'X-FrontFace-Session': sessionToken,
-        // Version 2: a refusal because a call from support is open carries that call's id.
+      };
+
+  /// Version 2: start/end refusals can carry an open inbound call id.
+  Map<String, String> get _headersV2 => {
+        ..._headers,
         'X-FrontFace-Calls-Version': '2',
       };
 
   Future<CallAvailability> availability() async {
+    // Same headers as 1.6.2 — Calls-Version is only needed for start/end.
     final json = await _send('GET', '$_base/availability');
     if (json['available'] == true) return const CallAvailability.available();
     return CallAvailability.unavailable(
@@ -102,7 +107,13 @@ class CallsApi implements CallTransport {
       if ((appVersion ?? this.appVersion) != null) 'appVersion': appVersion ?? this.appVersion,
     };
     late int status;
-    final json = await _send('POST', _base, body: body, onStatus: (s) => status = s);
+    final json = await _send(
+      'POST',
+      _base,
+      body: body,
+      onStatus: (s) => status = s,
+      headers: _headersV2,
+    );
     final call = json['call'] as Map<String, dynamic>;
     final media = json['media'] as Map<String, dynamic>;
     return StartedCall(
@@ -117,7 +128,11 @@ class CallsApi implements CallTransport {
 
   @override
   Future<CallResult> get(String callId) async {
-    final json = await _send('GET', '$_base/${Uri.encodeComponent(callId)}');
+    final json = await _send(
+      'GET',
+      '$_base/${Uri.encodeComponent(callId)}',
+      headers: _headersV2,
+    );
     return CallResult.fromJson(json['call'] as Map<String, dynamic>);
   }
 
@@ -127,6 +142,7 @@ class CallsApi implements CallTransport {
       'POST',
       '$_base/${Uri.encodeComponent(callId)}/end',
       body: {if (connectFailed) 'reason': 'connect_failed'},
+      headers: _headersV2,
     );
     return CallResult.fromJson(json['call'] as Map<String, dynamic>);
   }
@@ -177,8 +193,16 @@ class CallsApi implements CallTransport {
     String url, {
     Map<String, dynamic>? body,
     void Function(int status)? onStatus,
+    Map<String, String>? headers,
     Map<String, String> extraHeaders = const {},
   }) =>
-      sendJson(_http, method, url,
-          headers: {..._headers, ...extraHeaders}, timeout: timeout, body: body, onStatus: onStatus);
+      sendJson(
+        _http,
+        method,
+        url,
+        headers: {...(headers ?? _headers), ...extraHeaders},
+        timeout: timeout,
+        body: body,
+        onStatus: onStatus,
+      );
 }

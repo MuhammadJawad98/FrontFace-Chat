@@ -1,3 +1,9 @@
+## 1.7.1
+
+* Calls: send `X-FrontFace-Calls-Version: 2` only on start/get/end (not availability), so availability checks stay compatible.
+* Call button: show while identified if availability is still pending; ignore stale availability races; keep last successful availability on transient failures.
+* Call button icon uses `onPrimaryColor` for contrast on the app bar.
+
 ## 1.7.0
 
 * Calls from support (incoming): register/unregister device, parse call pushes, answer/decline, long-poll `stoppedRinging`, and rejoin via answer — same contract as mobile-sdk `frontface_calls` 0.2.0.

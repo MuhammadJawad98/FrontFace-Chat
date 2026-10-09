@@ -315,7 +315,10 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                             color: widget.theme.onPrimaryColor,
                           ),
                         )
-                      : const Icon(Icons.call),
+                      : Icon(
+                          Icons.call,
+                          color: widget.theme.onPrimaryColor,
+                        ),
                 );
               },
             ),

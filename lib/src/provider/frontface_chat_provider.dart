@@ -78,6 +78,7 @@ class FrontFaceChatProvider extends ChangeNotifier
   bool _csatSubmitted = false;
   FrontFaceIdentifyResult? _identifyResult;
   CallAvailability? _callAvailability;
+  int _availabilityRequestId = 0;
   FrontFaceCalls? _callsClient;
   bool _isStartingCall = false;
 
@@ -145,16 +146,25 @@ class FrontFaceChatProvider extends ChangeNotifier
       _status == FrontFaceConversationStatus.aiActive &&
       !_showOfflineForm;
 
-  /// Call button — only when [FrontFaceChatConfig.enableCalls] and the server
-  /// says calls are available for this verified visitor.
-  bool get showCallButton =>
-      _chatConfig.enableCalls &&
-      !_showLeadForm &&
-      !_isInitializing &&
-      _sessionId != null &&
-      _sessionToken != null &&
-      _visitorId != null &&
-      (_callAvailability?.available ?? false);
+  /// Call button — when calls are enabled, session is ready, and either the
+  /// server says available or we are identified and still waiting on
+  /// availability (do not hide on a failed/pending check).
+  bool get showCallButton {
+    if (!_chatConfig.enableCalls ||
+        _showLeadForm ||
+        _isInitializing ||
+        _sessionId == null ||
+        _sessionToken == null ||
+        _visitorId == null) {
+      return false;
+    }
+    final availability = _callAvailability;
+    if (availability == null) {
+      // Pending / failed check — show once identified (1.6.2 UX).
+      return _identifyResult != null;
+    }
+    return availability.available;
+  }
 
   bool get isStartingCall => _isStartingCall;
 
@@ -384,17 +394,31 @@ class FrontFaceChatProvider extends ChangeNotifier
       _notify();
       return;
     }
+    final requestId = ++_availabilityRequestId;
     try {
       final result = await _calls().availability(
         conversationId: _sessionId!,
         sessionToken: _sessionToken!,
       );
-      if (_disposed) return;
+      if (_disposed || requestId != _availabilityRequestId) return;
       _callAvailability = result;
+      if (kDebugMode && _chatConfig.debugLogging) {
+        debugPrint(
+          '[FrontFace] calls/availability → $result '
+          '(showCallButton=$showCallButton)',
+        );
+      }
       _notify();
-    } catch (_) {
-      if (_disposed) return;
-      _callAvailability = null;
+    } catch (e) {
+      if (kDebugMode && _chatConfig.debugLogging) {
+        debugPrint('[FrontFace] calls/availability failed: $e');
+      }
+      // Ignore stale / racing failures so a later success is not wiped.
+      if (_disposed || requestId != _availabilityRequestId) return;
+      // Keep last known result; only clear when we had nothing useful.
+      if (_callAvailability?.available != true) {
+        _callAvailability = null;
+      }
       _notify();
     }
   }
