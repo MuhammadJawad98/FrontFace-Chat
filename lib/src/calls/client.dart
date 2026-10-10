@@ -45,6 +45,8 @@ class FrontFaceCalls {
   final String? appVersion;
 
   /// Krisp noise cancellation on the customer's microphone, on iOS and Android only.
+  ///
+  /// If Krisp fails during connect, [LiveKitMedia] retries once without it.
   final bool noiseCancellation;
 
   /// Start on the loudspeaker instead of the earpiece (iOS and Android).

@@ -226,12 +226,14 @@ final calls = FrontFaceCalls(
   clientKey: pk,
   visitorId: visitorId,
   deviceStore: SecureCallDeviceStore(),
+  // Prefer false on Android if Krisp still misbehaves; package retries without it.
   noiseCancellation: true,
   speakerOnAtStart: false,
 );
 
 // When the user accepts on the system call UI:
 Future<void> onAccept(String callId, {String? agentName}) async {
+  // Close any stoppedRinging watcher for this call first (do not endCall mid-join).
   final mic = await Permission.microphone.request();
   if (!mic.isGranted) {
     await (await calls.incomingCall(callId)).decline();
@@ -241,6 +243,10 @@ Future<void> onAccept(String callId, {String? agentName}) async {
 
   await frontFaceKeepCallAliveInBackground(true);
   try {
+    // Keep CallKit / ConnectionService alive for the audio session (esp. iOS).
+    // Ending it here kills mic/speaker and the call drops with no voice.
+    await FlutterCallkitIncoming.setCallConnected(callId);
+
     final incoming = await calls.incomingCall(callId, agentName: agentName);
     final session = await incoming.answer();
 
@@ -249,6 +255,7 @@ Future<void> onAccept(String callId, {String? agentName}) async {
         builder: (_) => FrontFaceCallScreen(session: session),
       ),
     );
+    // Only end CallKit after the call is fully over.
     await session.done;
   } on CallsException catch (e) {
     // CALL_ANSWERED_ELSEWHERE, CALL_ENDED, DEVICE_NOT_REGISTERED, …
@@ -269,14 +276,20 @@ Future<void> onDecline(String callId) async {
 }
 ```
 
-While ringing (especially on iOS), watch for cancel / answered-elsewhere:
+While ringing (especially on iOS), watch for cancel / answered-elsewhere.
+**Do not** treat `answeredHere == null` as “dismiss” — that ends CallKit while Accept is still joining LiveKit:
 
 ```dart
 final incoming = await calls.incomingCall(callId);
 final stopped = await incoming.stoppedRinging;
-if (stopped.answeredHere != true) {
-  await endSystemCall(callId);
+// Skip dismiss while this phone is accepting / already in the call.
+if (handlingAccept || activeCallIds.contains(callId)) return;
+if (stopped.answeredHere == true) {
+  await FlutterCallkitIncoming.setCallConnected(callId);
+  return;
 }
+if (stopped.status == 'active') return; // ambiguous — leave CallKit alone
+await endSystemCall(callId);
 // Call incoming.close() if you tear down early.
 ```
 

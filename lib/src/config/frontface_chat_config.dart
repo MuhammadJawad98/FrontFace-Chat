@@ -75,6 +75,10 @@ class FrontFaceChatConfig {
   final bool callSpeakerOnAtStart;
 
   /// Krisp noise cancellation on the customer's microphone (iOS/Android).
+  ///
+  /// Defaults to `true`. If Krisp crashes on a device (seen on some Android
+  /// builds), LiveKit connect retries once without the filter. Set `false` for
+  /// maximum connect stability until `livekit_noise_filter` is fixed upstream.
   final bool callNoiseCancellation;
 
   /// Secure storage for this phone's registration when support can call the

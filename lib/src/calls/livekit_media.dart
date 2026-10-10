@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:livekit_noise_filter/livekit_noise_filter.dart';
 
@@ -12,6 +13,9 @@ class LiveKitMedia implements MediaConnection {
   LiveKitMedia({required this.noiseCancellation, required this.speakerOnAtStart});
 
   /// Krisp noise cancellation on the customer's microphone (iOS and Android only).
+  ///
+  /// On some Android builds Krisp crashes (`Reply already submitted` / NPE). When that
+  /// happens [connect] retries once without the processor so the call can continue.
   final bool noiseCancellation;
   final bool speakerOnAtStart;
 
@@ -31,17 +35,52 @@ class LiveKitMedia implements MediaConnection {
 
   @override
   Future<void> connect(String url, String token) async {
+    final wantNoise = noiseCancellation && _mobile;
+    try {
+      await _connectInternal(url, token, useNoise: wantNoise);
+    } catch (e) {
+      if (!wantNoise) rethrow;
+      if (kDebugMode) {
+        debugPrint(
+          '[FrontFace] LiveKit connect with Krisp failed ($e) — retrying without noise filter',
+        );
+      }
+      await _closeRoom();
+      await _disposeNoiseFilter();
+      await _connectInternal(url, token, useNoise: false);
+    }
+  }
+
+  Future<void> _connectInternal(
+    String url,
+    String token, {
+    required bool useNoise,
+  }) async {
     await _closeRoom();
     _disconnecting = false;
-    if (noiseCancellation && _noiseFilter == null && await LiveKitNoiseFilter.isSupported()) {
-      _noiseFilter = LiveKitNoiseFilter();
+
+    LiveKitNoiseFilter? filter;
+    if (useNoise) {
+      try {
+        if (await LiveKitNoiseFilter.isSupported()) {
+          filter = LiveKitNoiseFilter();
+          _noiseFilter = filter;
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('[FrontFace] Krisp init skipped: $e');
+        }
+        filter = null;
+        _noiseFilter = null;
+      }
     }
+
     final room = Room(
       roomOptions: RoomOptions(
         defaultAudioCaptureOptions: AudioCaptureOptions(
           noiseSuppression: true,
           echoCancellation: true,
-          processor: _noiseFilter,
+          processor: filter,
         ),
       ),
     );
@@ -99,6 +138,16 @@ class LiveKitMedia implements MediaConnection {
     await _room?.disconnect();
   }
 
+  Future<void> _disposeNoiseFilter() async {
+    final filter = _noiseFilter;
+    _noiseFilter = null;
+    if (filter == null) return;
+    try {
+      // destroy() can NPE on Android when WebRTC audio processing was never ready.
+      await filter.destroy();
+    } catch (_) {}
+  }
+
   Future<void> _closeRoom() async {
     final room = _room, listener = _listener;
     _room = null;
@@ -109,6 +158,7 @@ class LiveKitMedia implements MediaConnection {
       await room.disconnect();
       await room.dispose();
     }
+    await _disposeNoiseFilter();
   }
 
   @override

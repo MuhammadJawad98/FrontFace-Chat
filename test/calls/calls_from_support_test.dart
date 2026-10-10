@@ -147,7 +147,7 @@ void main() {
       final request = server.to('POST register').single;
       expect(request.body, containsPair('pushToken', 'push-1'));
       expect(request.body, containsPair('platform', 'android'));
-      expect(request.body, containsPair('packageVersion', '1.7.0'));
+      expect(request.body, containsPair('packageVersion', packageVersion));
       expect(request.headers['x-frontface-session'], 'session-1');
       expect(request.headers.containsKey('x-frontface-device'), isFalse, reason: 'nothing to send yet');
       final kept = jsonDecode(store.value!) as Map<String, dynamic>;

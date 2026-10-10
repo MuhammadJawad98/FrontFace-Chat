@@ -1,3 +1,9 @@
+## 1.7.2
+
+* LiveKit: if Krisp (`livekit_noise_filter`) crashes during connect (Android `Reply already submitted` / NPE), close the room and retry once without the noise filter so the call can connect.
+* Safer Krisp `destroy()` (ignore Android NPE when audio processing never started).
+* Docs (`CALLS_INTEGRATION.md`): CallKit Accept must `setCallConnected` before/while joining; `endCall` only after `session.done`; do not dismiss on `answeredHere == null`.
+
 ## 1.7.1
 
 * Calls: send `X-FrontFace-Calls-Version: 2` only on start/get/end (not availability), so availability checks stay compatible.

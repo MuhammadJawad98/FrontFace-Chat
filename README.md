@@ -266,6 +266,11 @@ Customers must be identified (`FrontFaceChat.identify`) or the button stays hidd
 `registerCallDevice` after identify / on launch / when the push token changes.
 Parse pushes with `FrontFaceChatProvider.isCallPush` / `parseCallPush`, then
 `incomingCall(callId)` to answer or decline. Unregister on sign-out.
+On Accept, hosts must `setCallConnected` and only `endCall` after `session.done`
+(see CALLS_INTEGRATION.md) — ending CallKit mid-join kills audio.
+
+If Krisp noise filter crashes on Android during connect, the SDK retries LiveKit
+once without it. Set `callNoiseCancellation: false` for max stability if needed.
 
 Permissions use the **native** system dialog. An in-app popup appears only if access
 is permanently denied (to open Settings) or location services are off.
