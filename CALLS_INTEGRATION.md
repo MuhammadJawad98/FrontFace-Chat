@@ -226,31 +226,44 @@ final calls = FrontFaceCalls(
   clientKey: pk,
   visitorId: visitorId,
   deviceStore: SecureCallDeviceStore(),
-  // Prefer false on Android if Krisp still misbehaves; package retries without it.
-  noiseCancellation: true,
+  // Prefer false on Android until Krisp is stable; package also retries without it.
+  noiseCancellation: false,
   speakerOnAtStart: false,
 );
+
+final navigatorKey = GlobalKey<NavigatorState>(); // root MaterialApp.navigatorKey
 
 // When the user accepts on the system call UI:
 Future<void> onAccept(String callId, {String? agentName}) async {
   // Close any stoppedRinging watcher for this call first (do not endCall mid-join).
+  activeCallIds.add(callId);
+
+  // Keep CallKit / ConnectionService alive for the audio session (esp. iOS).
+  await FlutterCallkitIncoming.setCallConnected(callId);
+
+  // Cold start: Accept can fire before the first frame — wait for UI.
+  final context = await frontFaceWaitForNavigatorContext(navigatorKey);
+  if (context == null) {
+    await endSystemCall(callId);
+    activeCallIds.remove(callId);
+    return;
+  }
+
   final mic = await Permission.microphone.request();
   if (!mic.isGranted) {
     await (await calls.incomingCall(callId)).decline();
     await endSystemCall(callId);
+    activeCallIds.remove(callId);
     return;
   }
 
+  // Android FGS needs an Activity — only after navigator exists.
   await frontFaceKeepCallAliveInBackground(true);
   try {
-    // Keep CallKit / ConnectionService alive for the audio session (esp. iOS).
-    // Ending it here kills mic/speaker and the call drops with no voice.
-    await FlutterCallkitIncoming.setCallConnected(callId);
-
     final incoming = await calls.incomingCall(callId, agentName: agentName);
     final session = await incoming.answer();
 
-    await Navigator.of(context).push(
+    await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => FrontFaceCallScreen(session: session),
       ),
@@ -262,6 +275,7 @@ Future<void> onAccept(String callId, {String? agentName}) async {
   } finally {
     await endSystemCall(callId);
     await frontFaceKeepCallAliveInBackground(false);
+    activeCallIds.remove(callId);
   }
 }
 
@@ -305,14 +319,85 @@ try {
 }
 ```
 
+### 4.5 Inbound Accept: app open vs app killed
+
+`incomingCall` → `answer()` → LiveKit is the same in both cases. Failures when the
+app was **terminated** are almost always host lifecycle: CallKit Accept runs in
+native before Dart has a listener, navigator, or Android Activity.
+
+| App state | What the host must do |
+|---|---|
+| App open | CallKit `actionCallAccept` → `onAccept` (below) |
+| App killed / background | Same `onAccept`, plus **recover** Accept if Dart missed the event |
+
+**Clarify:** “If the app is killed, the call ends” means killing the app **during an
+already-connected call** (media drops). It does **not** mean the customer cannot
+Accept while the app was terminated. Inbound Accept from terminated **must** wake
+the app, use the stored `CallDeviceStore` credential, and join.
+
+**A. Attach the CallKit listener early** — after `dotenv` / keys, **before or right
+around** `runApp`. Do not wait for a late async FCM `init()` after the first frame;
+Accept from a killed app may already have fired.
+
+```dart
+await dotenv.load();
+FrontFaceCallsHost.init(); // listens to FlutterCallkitIncoming.onEvent
+runApp(MyApp(navigatorKey: navigatorKey));
+```
+
+**B. Recover Accept from `activeCalls()`** (cold start + resume) — when the Dart
+listener was late, native still holds an accepted call:
+
+```dart
+Future<void> recoverAcceptedCallIfNeeded() async {
+  final calls = await FlutterCallkitIncoming.activeCalls();
+  for (final raw in calls) {
+    if (raw is! Map) continue;
+    final callId = raw['id']?.toString() ?? '';
+    final accepted = raw['isAccepted'] == true || '${raw['isAccepted']}' == 'true';
+    if (callId.isEmpty || !accepted) continue;
+    if (activeCallIds.contains(callId)) continue;
+    await onAccept(callId, agentName: /* from raw['extra'] */);
+    return;
+  }
+}
+
+// After first frame:
+WidgetsBinding.instance.addPostFrameCallback((_) {
+  unawaited(recoverAcceptedCallIfNeeded());
+});
+// And on AppLifecycleState.resumed
+```
+
+**C. Accept order (open or killed)**
+
+```text
+Accept (CallKit event or activeCalls recovery)
+  → setCallConnected(callId)                    // keep system audio session
+  → frontFaceWaitForNavigatorContext(...)       // up to a few seconds
+  → Permission.microphone
+  → frontFaceKeepCallAliveInBackground(true)    // Android: Activity must be up
+  → incomingCall(callId).answer()
+  → push FrontFaceCallScreen(session)
+  → await session.done
+  → endCall(callId)
+  → frontFaceKeepCallAliveInBackground(false)
+```
+
+**Do not** call `endCall` until the session is over. Ending CallKit mid-join kills
+the audio session (especially iOS) and looks like “no voice” / failed connect.
+
 ---
 
 ## 5. Recommended app wiring
 
 ```text
-App start
-  └─ MultiProvider → FrontFaceChat.createProvider(config with callDeviceStore)
-       └─ initialize()
+main()
+  └─ dotenv.load()
+  └─ CallKit onEvent listener (early)          ← before/around runApp
+  └─ runApp
+       └─ post-frame + on resume:
+            recoverAcceptedCallIfNeeded()     ← activeCalls() → onAccept
 
 Login / each launch while signed in
   └─ identify(jwt)
@@ -320,9 +405,10 @@ Login / each launch while signed in
 
 Push arrives (FCM / VoIP)
   └─ isCallPush? → parseCallPush → show CallKit
-  └─ Accept → incomingCall → answer → FrontFaceCallScreen
+  └─ Accept (event or activeCalls recovery)
+       → setCallConnected → wait navigator → mic → FGS → answer → CallScreen
   └─ Decline → incomingCall → decline
-  └─ call.ended / stoppedRinging → dismiss CallKit
+  └─ call.ended / stoppedRinging → dismiss only if not answering here
 
 Logout
   └─ unregisterCallDevice()
@@ -413,10 +499,14 @@ Navigator.of(context).push(
 - [ ] `unregisterCallDevice` on logout  
 - [ ] FCM (Android) / VoIP PushKit (iOS)  
 - [ ] System call UI (CallKit / ConnectionService) using `callId`  
-- [ ] Accept → mic → `incomingCall` → `answer` → `FrontFaceCallScreen`  
+- [ ] CallKit listener attached early (around `runApp`, not only late FCM init)  
+- [ ] `activeCalls()` recovery after first frame + on `AppLifecycleState.resumed`  
+- [ ] Accept → `setCallConnected` → wait navigator → mic → FGS → `answer` → CallScreen  
 - [ ] Decline → `decline`  
-- [ ] `stoppedRinging` / `call.ended` dismisses the system UI  
-- [ ] `frontFaceKeepCallAliveInBackground` while answered on Android  
+- [ ] `stoppedRinging` does **not** dismiss when `answeredHere == null` / while accepting  
+- [ ] `endCall` only after `session.done`  
+- [ ] `frontFaceKeepCallAliveInBackground` only after Activity/UI is up (Android)  
+- [ ] **App killed:** Accept → app launches → CallScreen + two-way audio  
 
 ---
 
@@ -441,6 +531,7 @@ FrontFaceCalls(... deviceStore: ...)
 FrontFaceCalls.registerDevice / unregisterDevice / incomingCall / startCall
 FrontFaceCallScreen(session: ...)
 frontFaceKeepCallAliveInBackground(bool)
+frontFaceWaitForNavigatorContext(navigatorKey) // cold-start Accept
 ```
 
 For OpenAPI of related chat APIs, see `openapi.yaml` in this repository.

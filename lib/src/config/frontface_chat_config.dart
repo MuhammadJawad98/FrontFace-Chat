@@ -50,10 +50,11 @@ class FrontFaceChatConfig {
   /// never the raw user id. Leave null for anonymous / device-scoped chats.
   final String? visitorId;
 
-  /// Shows the app-bar refresh (“new chat”) button. Defaults to `true`.
+  /// Shows “new chat” controls (app-bar refresh and the resolved/closed
+  /// “Start new chat” button). Defaults to `true`.
   ///
-  /// Set to `false` to hide it when the host app starts sessions itself or
-  /// does not want users to reset the conversation from chat.
+  /// Set to `false` when the host starts sessions itself, or when users should
+  /// keep chatting on the same thread after resolve (composer stays available).
   final bool showNewChatButton;
 
   /// Optional attachments (location / images / voice). Defaults off.

@@ -1,3 +1,9 @@
+## 1.7.3
+
+* Docs: inbound Accept from **app killed / background** — CallKit listener early, `activeCalls()` recovery after launch + resume, wait for navigator before `answer()` / Android FGS / CallScreen; clarify “killed during connected call” vs Accept while terminated.
+* `frontFaceWaitForNavigatorContext` helper for cold-start Accept (poll until root navigator exists).
+* `showNewChatButton: false` also hides the resolved/closed “Start new chat” strip (composer stays for the same thread).
+
 ## 1.7.2
 
 * LiveKit: if Krisp (`livekit_noise_filter`) crashes during connect (Android `Reply already submitted` / NPE), close the room and retry once without the noise filter so the call can connect.

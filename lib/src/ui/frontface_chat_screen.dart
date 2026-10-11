@@ -500,10 +500,14 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
                               ),
                             ),
                           ),
-                        if (provider.status ==
-                                FrontFaceConversationStatus.resolved ||
-                            provider.status ==
-                                FrontFaceConversationStatus.closed)
+                        // Resolved/closed still keep the composer (same thread
+                        // reopens on send). Only show "Start new chat" when the
+                        // host enables the new-chat control.
+                        if (provider.showNewChatButton &&
+                            (provider.status ==
+                                    FrontFaceConversationStatus.resolved ||
+                                provider.status ==
+                                    FrontFaceConversationStatus.closed))
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                             child: SizedBox(
@@ -543,11 +547,13 @@ class _FrontFaceChatScreenState extends State<FrontFaceChatScreen> {
   }
 
   bool _hasBottomChrome(FrontFaceChatProvider provider) {
+    final showResolvedNewChat = provider.showNewChatButton &&
+        (provider.status == FrontFaceConversationStatus.resolved ||
+            provider.status == FrontFaceConversationStatus.closed);
     return provider.showCsatPrompt ||
         provider.channels.isNotEmpty ||
         provider.showHandoffButton ||
-        provider.status == FrontFaceConversationStatus.resolved ||
-        provider.status == FrontFaceConversationStatus.closed ||
+        showResolvedNewChat ||
         (provider.canChat && !provider.showLeadForm);
   }
 

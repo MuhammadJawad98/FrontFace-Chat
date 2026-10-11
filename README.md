@@ -269,8 +269,15 @@ Parse pushes with `FrontFaceChatProvider.isCallPush` / `parseCallPush`, then
 On Accept, hosts must `setCallConnected` and only `endCall` after `session.done`
 (see CALLS_INTEGRATION.md) — ending CallKit mid-join kills audio.
 
+**App killed / background Accept:** attach the CallKit listener early (around
+`runApp`), recover with `FlutterCallkitIncoming.activeCalls()` after the first
+frame and on resume, and wait for a navigator (`frontFaceWaitForNavigatorContext`)
+before `answer()` / Android FGS / `FrontFaceCallScreen`. Killing the app *during*
+an already-connected call drops media; Accept while the app was terminated is
+supported when the host follows that pattern.
+
 If Krisp noise filter crashes on Android during connect, the SDK retries LiveKit
-once without it. Set `callNoiseCancellation: false` for max stability if needed.
+once without it. Prefer `callNoiseCancellation: false` for max stability if needed.
 
 Permissions use the **native** system dialog. An in-app popup appears only if access
 is permanently denied (to open Settings) or location services are off.
@@ -460,7 +467,7 @@ release/profile builds.
 | Option | Required | Notes |
 |--------|----------|--------|
 | `requireLeadCaptureBeforeChat` | No | Defaults to `true`: show the lead form before any greeting or session. Set `false` to follow the dashboard `capture_mode` instead. See [Lead capture timing](#lead-capture-timing). |
-| `showNewChatButton` | No | Defaults to `true`. Set `false` to hide the app-bar refresh / new-chat button. |
+| `showNewChatButton` | No | Defaults to `true`. Set `false` to hide the app-bar refresh and the resolved/closed “Start new chat” button (composer still works on the same thread). |
 
 ## Lead capture timing
 
