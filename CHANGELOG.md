@@ -1,3 +1,11 @@
+## 1.7.4
+
+* iOS inbound: `registerDevice` rejects non–VoIP (FCM-shaped) push tokens with `CallsErrorCode.invalidPushToken`.
+* Helpers `looksLikeIosVoipPushToken` / `looksLikeFcmPushToken`.
+* Docs: iOS must register PushKit VoIP (64 hex), never FCM; re-register on `actionDidUpdateDevicePushTokenVoip`; PushKit AppDelegate must report every VoIP push to CallKit.
+* Docs: incoming CallKit / ConnectionService branding — Android `isShowLogo` + `logoUrl`, iOS `CallKitLogo` `iconName` in Dart **and** VoIP `AppDelegate` (killed-state rings).
+* Example: `CallKitLogo.imageset` + `assets/images/call_logo.png` for host reference.
+
 ## 1.7.3
 
 * Docs: inbound Accept from **app killed / background** — CallKit listener early, `activeCalls()` recovery after launch + resume, wait for navigator before `answer()` / Android FGS / CallScreen; clarify “killed during connected call” vs Accept while terminated.

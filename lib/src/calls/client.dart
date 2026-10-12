@@ -12,6 +12,7 @@ import 'incoming.dart';
 import 'livekit_media.dart';
 import 'media.dart';
 import 'models.dart';
+import 'push_token.dart';
 
 /// Where an iPhone's VoIP pushes go: `sandbox` for builds run from Xcode, `production` for TestFlight
 /// and the App Store.
@@ -135,8 +136,13 @@ class FrontFaceCalls {
   /// while signed in, and whenever the push token changes (iOS: the PushKit VoIP token; Android: the
   /// FCM token). Only verified customers' phones can register.
   ///
+  /// On **iOS**, [pushToken] must be a PushKit VoIP token (64 hex chars). Never pass an FCM token
+  /// (`…:APA91b…`) — Firebase cannot deliver Apple VoIP pushes, so the phone will not ring when
+  /// closed. Wait for PushKit / `actionDidUpdateDevicePushTokenVoip` and register then.
+  ///
   /// Asks the server only when something changed or a day has passed, unless [force] is set.
-  /// Throws [CallsException] when the server refuses (for example [CallsErrorCode.notVerified]).
+  /// Throws [CallsException] when the server refuses (for example [CallsErrorCode.notVerified]),
+  /// or [CallsErrorCode.invalidPushToken] when an iOS token is not VoIP-shaped.
   Future<void> registerDevice({
     required String conversationId,
     required String sessionToken,
@@ -149,6 +155,16 @@ class FrontFaceCalls {
     if (platform != 'ios' && platform != 'android') {
       throw const CallsException(
           status: 0, code: CallsErrorCode.deviceNotRegistered, message: 'Only iOS and Android phones');
+    }
+    if (platform == 'ios' && !looksLikeIosVoipPushToken(pushToken)) {
+      throw const CallsException(
+        status: 0,
+        code: CallsErrorCode.invalidPushToken,
+        message:
+            'iOS registerDevice requires a PushKit VoIP token (64 hex). '
+            'Do not pass an FCM token — wait for getDevicePushTokenVoIP / '
+            'actionDidUpdateDevicePushTokenVoip',
+      );
     }
     final stored = StoredDevice.decode(await store.read());
     final now = DateTime.now();

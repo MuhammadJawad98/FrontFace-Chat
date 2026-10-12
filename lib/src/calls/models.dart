@@ -265,6 +265,10 @@ abstract final class CallsErrorCode {
   /// phone. Carry on; it registers once that account signs out.
   static const tokenInUse = 'TOKEN_IN_USE';
 
+  /// iOS [FrontFaceCalls.registerDevice] was given an FCM (or other non-VoIP) token.
+  /// Use the PushKit VoIP token from `FlutterCallkitIncoming.getDevicePushTokenVoIP()` instead.
+  static const invalidPushToken = 'INVALID_PUSH_TOKEN';
+
   /// The server could not be reached (no network, timeout).
   static const network = 'NETWORK';
 }

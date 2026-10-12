@@ -7,7 +7,7 @@ import 'models.dart';
 import 'transport.dart';
 
 /// This package's version, sent when a phone registers for calls from support.
-const packageVersion = '1.7.3';
+const packageVersion = '1.7.4';
 
 /// The answer to `POST …/calls`: the call, and where and how to join its audio.
 class StartedCall {

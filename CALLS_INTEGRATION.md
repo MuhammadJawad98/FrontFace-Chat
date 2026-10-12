@@ -56,6 +56,8 @@ frontface_chat:
 
 For inbound on iPhone you also need **PushKit VoIP** wired in native code (or via `flutter_callkit_incoming`) so a VoIP push is reported to CallKit immediately. Sandbox vs production must match the build (`ApnsEnvironment.sandbox` for Xcode / development profiles, `.production` for TestFlight / App Store).
 
+Also enable Xcode capabilities: **Push Notifications** and **Background Modes → Voice over IP** (+ Audio).
+
 ### Android (`AndroidManifest.xml`)
 
 ```xml
@@ -164,10 +166,12 @@ final chat = FrontFaceChat.createProvider(config: config);
 await chat.initialize();
 await FrontFaceChat.identify(provider: chat, identityToken: jwt);
 
-// Android: FCM token. iOS: PushKit VoIP token (not the normal APNs token).
+// Android: FCM. iOS: PushKit VoIP only (64 hex) — never FCM on iPhone.
+final pushToken = await resolvePushTokenForCalls();
+if (pushToken == null) return; // iOS: wait for VoIP; do not fall back to FCM
 await chat.registerCallDevice(
   pushToken: pushToken,
-  apnsEnvironment: ApnsEnvironment.production, // or .sandbox for Xcode builds
+  apnsEnvironment: ApnsEnvironment.production, // .sandbox for Xcode builds
 );
 
 // Call again on every launch while signed in, and when the token refreshes.
@@ -180,6 +184,55 @@ await chat.registerCallDevice(
 await chat.unregisterCallDevice();
 await FrontFaceChat.resetUser(chat);
 ```
+
+### 4.2.1 iOS VoIP token vs Android FCM (required)
+
+Firebase **cannot** deliver Apple VoIP pushes. If an iPhone registers with an FCM
+token (`…:APA91b…`), support calls only show a banner-style notify — **no CallKit
+ring** when the app is closed or locked.
+
+| | Firebase (FCM) | VoIP (PushKit) |
+|---|---|---|
+| Shape | `cXk2…:APA91b…` (~140 chars, has `:`) | **64 hex chars**, e.g. `3f5a09…c21e` |
+| Source | `FirebaseMessaging.instance.getToken()` | `FlutterCallkitIncoming.getDevicePushTokenVoIP()` after PushKit in `AppDelegate` |
+| Use for `registerDevice` | **Android only** | **iPhone only** |
+
+```dart
+Future<String?> resolvePushTokenForCalls() async {
+  if (Platform.isIOS) {
+    final voip = await FlutterCallkitIncoming.getDevicePushTokenVoIP();
+    final token = voip?.toString().trim() ?? '';
+    if (!looksLikeIosVoipPushToken(token)) return null; // not ready — do NOT use FCM
+    return token;
+  }
+  return FirebaseMessaging.instance.getToken();
+}
+```
+
+```dart
+FlutterCallkitIncoming.onEvent.listen((event) {
+  if (event?.event == Event.actionDidUpdateDevicePushTokenVoip) {
+    unawaited(registerForCalls()); // read VoIP again, then registerDevice
+  }
+  // … accept / decline …
+});
+```
+
+- Keep normal FCM for **marketing / order** notifications.
+- On iOS, **do not** pass FCM `onTokenRefresh` into `registerDevice` (that overwrites VoIP).
+- `FrontFaceCalls.registerDevice` on iOS throws [CallsErrorCode.invalidPushToken] if the token is not 64-hex VoIP-shaped.
+- Apple dashboard: production APNs key for TestFlight/store; Sandbox & Production if testing from Xcode.
+
+**AppDelegate (PushKit):** after plugin registration, set up `PKPushRegistry`:
+
+- `didUpdate credentials` → `setDevicePushTokenVoIP(token)`
+- `didInvalidatePushToken` → clear VoIP token
+- `didReceiveIncomingPushWith` → **always** `showCallkitIncoming(..., fromPushKit: true)` then `completion()`  
+  (iOS stops VoIP delivery if a push is not reported to CallKit)
+
+Reference: `mobile-sdk/flutter/frontface_calls/example/ios/Runner/AppDelegate.swift` (local) or CALLS sample hosts.
+
+Self-test: after sign-in, logs should show VoIP `len=64` on iPhone. If you see FCM registration on iOS, ringing when killed will fail.
 
 ### 4.3 Parse pushes (ignore FrontFace call payloads in your own handlers)
 
@@ -215,6 +268,57 @@ Future<bool> handleFrontFaceCallPush(Map<String, dynamic> data) async {
 **Android:** register an FCM background handler and foreground listener that call `handleFrontFaceCallPush(message.data)`.
 
 **iOS:** VoIP payload uses the **same keys** at the top level (`v`, `type`, `callId`, …). Report to CallKit immediately in native / CallKit plugin, then handle Accept / Decline in Dart.
+
+### 4.3.1 Incoming call branding (logo)
+
+Without these params the ring UI shows **no app logo**. Cold-start VoIP rings go through **native PushKit → CallKit**, so a Dart-only logo fix is **not** enough on iPhone — set `iconName` in `AppDelegate` too.
+
+```dart
+Future<void> showSystemIncomingCall({
+  required String callId,
+  required String callerName,
+  DateTime? ringUntil,
+}) async {
+  final durationMs = ringUntil == null
+      ? 45000
+      : ringUntil.difference(DateTime.now()).inMilliseconds.clamp(5000, 120000);
+
+  await FlutterCallkitIncoming.showCallkitIncoming(
+    CallKitParams(
+      id: callId,
+      nameCaller: callerName,
+      appName: 'Support',
+      type: 0, // audio
+      duration: durationMs,
+      android: const AndroidParams(
+        isCustomNotification: true,
+        isShowLogo: true, // required — default in many samples is false
+        logoUrl: 'assets/images/call_logo.png', // pubspec asset, or https://…
+      ),
+      ios: const IOSParams(
+        iconName: 'CallKitLogo', // Xcode asset catalog name, no extension
+        handleType: 'generic',
+      ),
+    ),
+  );
+}
+```
+
+| Platform | What to set |
+|---|---|
+| **Android** | `isShowLogo: true` + `logoUrl` (Flutter asset in `pubspec.yaml`, or `https://…`) |
+| **iOS (Dart)** | `IOSParams.iconName: 'CallKitLogo'` |
+| **iOS (VoIP / killed)** | Same name on the PushKit path: `data.iconName = "CallKitLogo"` before `showCallkitIncoming(..., fromPushKit: true)` |
+
+**iOS asset:** add an imageset under `ios/Runner/Assets.xcassets/` (conventional name **`CallKitLogo`**). Prefer a **template** image (alpha / silhouette) — CallKit tints it; full-color photos look wrong. If `iconName` is missing or the asset is not in the bundle, the plugin logs `Unable to load icon …` and CallKit shows no custom logo.
+
+```swift
+// AppDelegate — didReceiveIncomingPushWith (required when app is killed)
+data.iconName = "CallKitLogo"
+plugin.showCallkitIncoming(data, fromPushKit: true) { … }
+```
+
+Package example ships `CallKitLogo.imageset` and `assets/images/call_logo.png` as a reference; replace with your brand mark before shipping.
 
 ### 4.4 Answer / decline (works with chat closed)
 
@@ -448,6 +552,7 @@ Helpers:
 |---|---|
 | `NOT_VERIFIED` | Identify the customer before `registerCallDevice` |
 | `DEVICE_NOT_REGISTERED` | No stored credential — register again |
+| `INVALID_PUSH_TOKEN` | iOS `registerDevice` got FCM / non–64-hex — wait for PushKit VoIP |
 | `DEVICE_INVALID` | Registration gone — store is cleared; register again |
 | `CALL_ENDED` | Too late to answer |
 | `CALL_ANSWERED_ELSEWHERE` | Another device answered |
@@ -497,8 +602,11 @@ Navigator.of(context).push(
 - [ ] `CallDeviceStore` (secure storage) on config  
 - [ ] `registerCallDevice` after identify / on launch / on token refresh  
 - [ ] `unregisterCallDevice` on logout  
-- [ ] FCM (Android) / VoIP PushKit (iOS)  
+- [ ] FCM (Android) / **PushKit VoIP only on iOS** (never fall back to FCM)  
+- [ ] iOS: VoIP token `len=64` hex before claiming calls work; re-register on `actionDidUpdateDevicePushTokenVoip`  
+- [ ] iOS: PushKit `AppDelegate` reports every VoIP push to CallKit  
 - [ ] System call UI (CallKit / ConnectionService) using `callId`  
+- [ ] Incoming branding: Android `isShowLogo` + `logoUrl`; iOS `CallKitLogo` + `iconName` in Dart **and** VoIP `AppDelegate`  
 - [ ] CallKit listener attached early (around `runApp`, not only late FCM init)  
 - [ ] `activeCalls()` recovery after first frame + on `AppLifecycleState.resumed`  
 - [ ] Accept → `setCallConnected` → wait navigator → mic → FGS → `answer` → CallScreen  
@@ -507,6 +615,8 @@ Navigator.of(context).push(
 - [ ] `endCall` only after `session.done`  
 - [ ] `frontFaceKeepCallAliveInBackground` only after Activity/UI is up (Android)  
 - [ ] **App killed:** Accept → app launches → CallScreen + two-way audio  
+- [ ] Self-test: VoIP `len=64` on iPhone; logo visible on ring (app open **and** killed); Accept → two-way audio  
+
 
 ---
 

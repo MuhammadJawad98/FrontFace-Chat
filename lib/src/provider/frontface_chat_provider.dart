@@ -454,7 +454,8 @@ class FrontFaceChatProvider extends ChangeNotifier
   /// [FrontFaceChatConfig.callDeviceStore] and an active conversation.
   ///
   /// Call after identify / sign-in, on every launch while signed in, and when
-  /// the push token changes (iOS PushKit VoIP token; Android FCM).
+  /// the push token changes (**iOS: PushKit VoIP only**, never FCM; Android: FCM).
+  /// See [looksLikeIosVoipPushToken] / CALLS_INTEGRATION.md.
   Future<void> registerCallDevice({
     required String pushToken,
     ApnsEnvironment apnsEnvironment = ApnsEnvironment.production,

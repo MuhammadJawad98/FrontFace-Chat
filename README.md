@@ -276,6 +276,14 @@ before `answer()` / Android FGS / `FrontFaceCallScreen`. Killing the app *during
 an already-connected call drops media; Accept while the app was terminated is
 supported when the host follows that pattern.
 
+**iPhone ringing:** register the PushKit **VoIP** token (64 hex), not FCM.
+`registerDevice` rejects FCM-shaped tokens on iOS (`INVALID_PUSH_TOKEN`). See
+CALLS_INTEGRATION.md §4.2.1.
+
+**Incoming logo:** set Android `isShowLogo` + `logoUrl`, and iOS `iconName`
+(`CallKitLogo` in the asset catalog) in both Dart and the VoIP `AppDelegate`
+path — otherwise killed-state rings stay unbranded (§4.3.1).
+
 If Krisp noise filter crashes on Android during connect, the SDK retries LiveKit
 once without it. Prefer `callNoiseCancellation: false` for max stability if needed.
 

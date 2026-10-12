@@ -17,4 +17,10 @@ import GoogleMaps
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
   }
+
+  // Inbound VoIP (when you add PushKit + flutter_callkit_incoming):
+  // After building FlutterCallkitIncomingFlutterPayload / CallkitIncomingAppData,
+  // set data.iconName = "CallKitLogo" before showCallkitIncoming(..., fromPushKit: true).
+  // Asset: Assets.xcassets/CallKitLogo.imageset (template / silhouette).
+  // See CALLS_INTEGRATION.md §4.3.1 — Dart-only iconName is not enough when killed.
 }

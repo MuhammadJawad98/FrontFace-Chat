@@ -1,16 +1,14 @@
 # frontface_chat_example
 
-A new Flutter project.
+Demo host for the `frontface_chat` package (chat UI, maps, call-screen preview).
 
-## Getting Started
+## Incoming call branding (reference assets)
 
-This project is a starting point for a Flutter application.
+When wiring inbound CallKit / ConnectionService (see repo `CALLS_INTEGRATION.md` §4.3.1):
 
-A few resources to get you started if this is your first Flutter project:
+| Asset | Use |
+|---|---|
+| `ios/Runner/Assets.xcassets/CallKitLogo.imageset/` | iOS CallKit template icon (`IOSParams.iconName: 'CallKitLogo'`) — also set on the VoIP `AppDelegate` path |
+| `assets/images/call_logo.png` | Android `AndroidParams.logoUrl` with `isShowLogo: true` |
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Replace both with your brand mark before shipping. Prefer a silhouette / alpha template for `CallKitLogo` (CallKit tints it).
